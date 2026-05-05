@@ -1,0 +1,50 @@
+-include INCLUDE
+    Narrows down the primary testing scope defined with the -solution, -project, and -website options.
+    Specifies absolute file system paths to files to include in analysis.
+    You can use Ant-style wildcards to specify the resource.
+    You can use this option multiple times on the same command line.
+    If you can determine full path to file you can use it. If cannot use Ant patterns starting with "**\"
+
+    Wildcard rules:
+      '*'  - matches zero or more characters (excludes path separator)
+      '**' - matches multiple directory levels (includes path separators)
+    
+    Examples:
+      -include "C:\ProductX\Solution1\src\MyProject\Class.cs" or "**\MyProject\Class.cs"
+          Includes Class.cs file directly in MyProject project.
+
+      -include "C:\ProductX\Solution1\src" or "**\src\**"
+          Includes all files in the src directory and subdirectories.
+      
+      -include "C:\Devel\FooSolution\MyProject\**\*.cs" or "**\MyProject\**\*.cs"
+          Includes all C# files in MyProject and subdirectories.
+      
+      -include "C:\Devel\FooSolution\MyProject\Services\*.cs" or "**\Services\**\*.cs"
+          Includes all C# files directly in the Services directory (no subdirectories).
+
+-exclude EXCLUDE
+    Narrows down the primary testing scope defined with the -solution, -project, and -website options.
+    Specifies absolute file system paths to files to exclude from analysis.
+    You can use Ant-style wildcards to specify the resource.
+    You can use this option multiple times on the same command line.
+    
+    Wildcard rules:
+      '*'  - matches zero or more characters (excludes path separator)
+      '**' - matches multiple directory levels (includes path separators)
+    
+    Examples:
+      -exclude "C:\ProductX\Solution1\src\MyProject\Class.cs" or "**\MyProject\Class.cs"
+          Excludes Class.cs file directly in MyProject project.
+
+      -exclude "C:\Devel\FooSolution\*.Tests\**\*.*" or "**\*.Tests\**\*.*"
+          Excludes all files from test projects (projects ending with .Tests).
+      
+      -exclude "C:\Devel\FooSolution\**\obj\**"
+          Excludes all files in obj directories (build output).
+      
+      -exclude "C:\Devel\FooSolution\**" or "**\FooSolution\**"
+          Excludes all files in solution directories.
+      
+      -exclude "C:\Devel\FooSolution\MyProject\Generated\*.cs" or "**\Generated\*.cs"
+          Excludes all C# files directly in the Generated directory.
+    
