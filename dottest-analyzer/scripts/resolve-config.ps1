@@ -148,8 +148,12 @@ if ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERA
 }
 
 # ---- FIXES_BRANCH_NAME -------------------------------------------
+# If not set, leave empty — commits go directly to the currently checked-out branch.
+# If set, substitute [timestamp] with the current timestamp before use.
 if (-not $env:FIXES_BRANCH_NAME) {
-     $env:FIXES_BRANCH_NAME = "parasoft-ai-fixes-$(Get-Date -Format 'yyyyMMddHHmmss')" 
+    $env:FIXES_BRANCH_NAME = ""
+} else {
+    $env:FIXES_BRANCH_NAME = $env:FIXES_BRANCH_NAME -replace '\[timestamp\]', (Get-Date -Format 'yyyyMMddHHmmss')
 }
 
 # ---- DOTTEST_STATIC_NO_OF_MAX_FIXES ------------------------------------------
@@ -251,7 +255,7 @@ Resolved configuration:
   DOTTEST_BASE_UNIT_TEST_REPORT       = $baseUnitTestDisplay
   DOTTEST_BASE_UNIT_TEST_COVERAGE     = $baseCoverageDisplay
   DOTTEST_STATIC_NO_OF_MAX_FIXES      = $maxFixesDisplay
-  FIXES_BRANCH_NAME                   = $($env:FIXES_BRANCH_NAME)
+  FIXES_BRANCH_NAME                   = $(if ($env:FIXES_BRANCH_NAME -and $env:FIXES_BRANCH_NAME -ne '') { $env:FIXES_BRANCH_NAME } else { '(current branch)' })
   DOTTEST_FIX_ATTEMPTS                = $($env:DOTTEST_FIX_ATTEMPTS)
   DOTTEST_REFERENCE_BRANCH            = $targetBranchDisplay
   GIT_BRANCH                          = $gitBranchDisplay

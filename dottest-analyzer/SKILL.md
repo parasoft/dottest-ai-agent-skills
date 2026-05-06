@@ -48,7 +48,7 @@ All settings are read exclusively from environment variables. No interactive pro
 | `DOTTEST_BASE_UNIT_TEST_REPORT` | Optional | Absolute path to a base `report.xml` file. When both `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, Step 2 only verifies the build (no test run), and Step 7 uses Test Impact Analysis (TIA). When not set, Step 2 runs tests with coverage to create the baseline. |
 | `DOTTEST_BASE_UNIT_TEST_COVERAGE` | Optional | Absolute path to a base `coverage.xml` file. When both `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, Step 2 only verifies the build (no test run), and Step 7 uses Test Impact Analysis (TIA). When not set, Step 2 runs tests with coverage to create the baseline. |
 | `DISABLE_UNIT_TEST_VERIFICATION` | Optional | Set to `true` to skip unit test execution in Step 2 (only build check) and Step 7.1 (fix verification). Defaults to `false`. Useful when unit tests are slow or unavailable. |
-| `FIXES_BRANCH_NAME` | Optional | Name of the branch where fixes are committed. When set, used as the target branch for committing fixes. If not set, use the default value `parasoft-ai-fixes-[date timestamp]` silently |
+| `FIXES_BRANCH_NAME` | Optional | Name of the branch to create and switch to before committing fixes. Supports `[timestamp]` pattern (e.g. `my-fixes-[timestamp]`), which is replaced with the current date-time. If not set, commits are applied directly to the currently checked-out branch without creating a new branch. |
 | `DOTTEST_STATIC_NO_OF_MAX_FIXES` | Optional | Maximum number of violations to fix. Defaults to 5 if not set, unless user prompt explicitly specifies a different number (e.g. "fix up to 3 violations in file ABC.cs"). |
 | `DOTTEST_FIX_ATTEMPTS` | Optional | Number of different fix approaches to attempt per violation before giving up. Defaults to 2 (1 original fix + 1 retry with a different approach). |
 | `DOTTEST_REFERENCE_BRANCH` | Optional | If set, the skill will compare the current branch with the specified reference branch to determine the analysis scope. The reference branch must exist in the repository. |
@@ -231,7 +231,7 @@ Additionally:
 
 **One commit per violation - no exceptions.** Each successful fix must be committed individually, immediately after it passes verification (Step 7), before processing the next violation. Never stage or accumulate changes from multiple violations into a single commit. If multiple files were touched to fix a single violation, all of those files are included in that one violation's commit - but no files from any other violation.
 
-Create branch based on the current branch with the name format: `parasoft-ai-fixes/[timestamp]` (or use the value of `FIXES_BRANCH_NAME` if set). Switch to that branch before applying any fixes. If the branch already exists, reuse it. Do it ONCE at the beginning of the process, not per violation.
+If `FIXES_BRANCH_NAME` is set: create a branch with that name (with `[timestamp]` already substituted by `resolve-config.ps1`), switch to it before applying any fixes. If the branch already exists, reuse it. Do this ONCE at the beginning of the process, not per violation. If `FIXES_BRANCH_NAME` is empty, commit directly to the currently checked-out branch without creating or switching to any new branch.
 
 **If `DOTTEST_COMMIT_FIXES=true` and SUCCESS**: Stage only the files modified for the current violation (`git add <file> ...`) and commit with a message in the format:
 ```
