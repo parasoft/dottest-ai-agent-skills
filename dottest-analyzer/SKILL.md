@@ -81,6 +81,8 @@ All configuration loading, parsing, validation, and dotTEST installation verific
 
 During processing of this skill invoke the `resolve-config.ps1` script **ONCE**. Do NOT rerun this script once it has been corretly executed. If any required variable is missing or invalid, the script prints a descriptive error message and exits with a non-zero code. If the script exits with an error, print `ERROR: Configuration error - [error message from script]` and terminate skill immediately with non-zero exit code.
 
+**For all subsequent steps**, keep the environment consistent with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified unless specified.
+
 After successful return, the following environment variables are guaranteed to be set and available to all subsequent steps: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_COMMIT_FIXES`, `DISABLE_UNIT_TEST_VERIFICATION`, `DOTTEST_FILTER_RULE`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`.
 
 **After calling the script**, set the `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` environment variables based on the user's request (see [Analysis Scope](#resolve-analysis-scope) below). 
@@ -121,6 +123,8 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 **Multiple patterns**: When the user mentions multiple targets or exclusions, combine them with semicolons within the respective variable (e.g., `DOTTEST_INCLUDE=**/Project1/**;**/Project2/**`).
 
 ### Step 2: Verify Build and Tests
+
+**Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
 **Verify the solution builds and unit tests pass.** The verification behavior depends on whether baseline files are provided and the `DISABLE_UNIT_TEST_VERIFICATION` setting:
 
