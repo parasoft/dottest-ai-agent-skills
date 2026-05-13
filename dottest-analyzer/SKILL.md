@@ -233,9 +233,9 @@ Additionally:
 
 **By default, do NOT commit any changes.** Skip this step unless `DOTTEST_COMMIT_FIXES` is set to `true` in the environment.
 
-**One commit per violation - no exceptions.** Each successful fix must be committed individually, immediately after it passes verification (Step 7), before processing the next violation. Never stage or accumulate changes from multiple violations into a single commit. If multiple files were touched to fix a single violation, all of those files are included in that one violation's commit - but no files from any other violation.
+If `FIXES_BRANCH_NAME` is set: **create a branch** with name matching that environment variable, then **switch to it** before applying any fixes. If the branch already exists, reuse it. Do this ONCE at the beginning of the process, not per violation. **If `FIXES_BRANCH_NAME` is empty, commit directly to the currently checked-out branch** without creating or switching to any new branch
 
-If `FIXES_BRANCH_NAME` is set: create a branch with that name (with `[timestamp]` already substituted by `resolve-config.ps1`), switch to it before applying any fixes. If the branch already exists, reuse it. Do this ONCE at the beginning of the process, not per violation. If `FIXES_BRANCH_NAME` is empty, commit directly to the currently checked-out branch without creating or switching to any new branch.
+**One commit per violation - no exceptions.** Each successful fix must be committed individually, immediately after it passes verification (Step 7), before processing the next violation. Never stage or accumulate changes from multiple violations into a single commit. If multiple files were touched to fix a single violation, all of those files are included in that one violation's commit - but no files from any other violation.
 
 **If `DOTTEST_COMMIT_FIXES=true` and SUCCESS**: Stage only the files modified for the current violation (`git add <file> ...`) and commit with a message in the format:
 ```
