@@ -240,7 +240,7 @@ $targetBranchDisplay = if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFER
 $gitBranchDisplay = if ($env:GIT_BRANCH -and $env:GIT_BRANCH -ne "") { $env:GIT_BRANCH } else { "(not set)" }
 $gitWorkspaceDisplay = if ($env:GIT_WORKSPACE -and $env:GIT_WORKSPACE -ne "") { $env:GIT_WORKSPACE } else { "(not set)" }
 
-Write-Host @"
+Write-Output @"
 Resolved configuration:
   DOTTEST_ANALYZER_CONFIG             = $configDisplay
   DOTTEST_HOME                        = $($env:DOTTEST_HOME)
