@@ -133,14 +133,14 @@ if ($buildOnlyMode) {
         $argList += @("-settings", $env:DOTTEST_SETTINGS)
     }
 
-    if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
-        $argList += @("-property", "scope.scontrol=true")
-        $argList += @("-property", "scope.scontrol.files.filter.mode=branch")
-        $argList += @("-property", "scontrol.rep1.type=git")
-        $argList += @("-property", "scontrol.rep1.git.workspace=$($env:GIT_WORKSPACE)")
-        $argList += @("-property", "scontrol.rep1.git.branch=$($env:GIT_BRANCH)")
-        $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
-    }
+    #if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
+    #    $argList += @("-property", "scope.scontrol=true")
+    #    $argList += @("-property", "scope.scontrol.files.filter.mode=branch")
+    #    $argList += @("-property", "scontrol.rep1.type=git")
+    #    $argList += @("-property", "scontrol.rep1.git.workspace=$($env:GIT_WORKSPACE)")
+    #    $argList += @("-property", "scontrol.rep1.git.branch=$($env:GIT_BRANCH)")
+    #    $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
+    #}
 
     Write-Host "[verify] Running: $dottestExe $($argList -join ' ')"
 
