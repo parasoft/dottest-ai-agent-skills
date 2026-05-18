@@ -188,7 +188,7 @@ Process violations in the following deterministic order:
 **In case of simple violations (formatting, whitespace, unnecessary casts, unused imports) where the fix is purely mechanical and does not change logic - fix all such violations in one FILE at a time, then verify.**
 **In case of all other violations (logic changes, null checks, resource handling, exception handling, API changes): FIX exactly one VIOLATION at a time, then verify.**
 
-Fix number of violations defined by `DOTTEST_STATIC_NO_OF_MAX_FIXES` environment variable. If not set, default is 5 violations, unless stated otherwise in the user prompt (e.g. "fix up to 3 violations in file ABC.cs") - in that case, use the number specified in the prompt. After reaching the maximum number of fixes, stop processing further violations, even if there are more remaining. Increase value of this variable by 1 for each new violation fixed, so that the next violation is processed in the next iteration.
+**Fix number of violations defined by `DOTTEST_STATIC_NO_OF_MAX_FIXES`** environment variable. If not set, default is 5 violations, unless stated otherwise in the user prompt (e.g. "fix up to 3 violations in file ABC.cs") - in that case, use the number specified in the prompt. After reaching the maximum number of fixes, stop processing further violations, even if there are more remaining. Increase value of this variable by 1 for each new violation fixed, so that the next violation is processed in the next iteration.
 
 **Include all steps below and VERIFICATION after each fix.**
 
