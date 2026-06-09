@@ -22,6 +22,8 @@ This skill enables GitHub Copilot to run Parasoft dotTEST Static Analysis on .NE
 
 > **Perform Steps in Order, from 1 to 9** and do not deviate from the defined sequence. Each step relies on the successful completion of the previous steps, and skipping or reordering them may lead to incorrect behavior or failures. Follow the steps exactly as outlined to ensure the skill functions as intended.
 
+**Do not run any other scripts than the ones provided by this skill.** All scripts required for configuration, analysis, verification, and fixing are included in the `scripts` directory of this skill. Do not create, modify, or execute any other scripts or commands outside of those defined in this document.
+
 ## When to Use This Skill
 
 Use this skill when:
@@ -235,7 +237,7 @@ Additionally:
 
 If `FIXES_BRANCH_NAME` is set: **create a branch** with name matching that environment variable, then **switch to it** before applying any fixes. If the branch already exists, reuse it. Do this ONCE at the beginning of the process, not per violation. **If `FIXES_BRANCH_NAME` is empty, commit directly to the currently checked-out branch** without creating or switching to any new branch
 
-**One commit per violation - no exceptions.** Each successful fix must be committed individually, immediately after it passes verification (Step 7), before processing the next violation. Never stage or accumulate changes from multiple violations into a single commit. If multiple files were touched to fix a single violation, all of those files are included in that one violation's commit - but no files from any other violation.
+**One commit per violation - no exceptions.** Each successful fix must be committed individually, immediately after it passes verification (Step 7), before processing the next violation. Never stage or accumulate changes from multiple violations into a single commit. If multiple files were touched to fix a single violation, all of those files are included in that one violation's commit - but no files from any other violation. **If there are pre-existing local changes in the repository that are not related to the fix, do not include them in the commit.** Use explicit file-level staging commands to only stage the files changed for the current violation.
 
 **If `DOTTEST_COMMIT_FIXES=true` and SUCCESS**: Stage only the files modified for the current violation (`git add <file> ...`) and commit with a message in the format:
 ```
