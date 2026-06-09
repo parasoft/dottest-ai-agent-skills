@@ -154,7 +154,7 @@ If unit tests were executed, check that there are no unit test failures in the `
 
 ### Step 3: Run dotTEST Analysis
 
-If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` check if report exists and its test configuration (`pseudoUrl` attribute of `<TestConfig>` element) match `DOTTEST_TEST_CONFIGURATION`, if so skip to Step 4. Otherwise, run the full dotTEST analysis to produce the baseline report.
+**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` check if report exists and its test configuration (`pseudoUrl` attribute of `<TestConfig>` element) match (or is similar to) `DOTTEST_TEST_CONFIGURATION`, if so skip to Step 4.** Otherwise, run the full dotTEST analysis to produce the baseline report.
 
 Before calling the script, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1 (e.g. `**/com/foo/**;**/Bar.cs`), or an empty string if no scope was requested.
 
