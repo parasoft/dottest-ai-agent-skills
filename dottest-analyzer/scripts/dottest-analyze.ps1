@@ -65,7 +65,7 @@ if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
     # same test configuration. If so, skip re-running the analysis and reuse it.
     if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "" -and (Test-Path $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)) {
         Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
-        Write-Output "[dottest-analyze] Skipping initial analysis — reusing existing baseline."
+        Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."
         Write-Output "REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
         exit 0
     }
