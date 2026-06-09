@@ -34,8 +34,8 @@
 $ErrorActionPreference = "Stop"
 
 # Log the configuration being used
-Write-Host "[dottest-analyze] SOLUTION_PATH = $env:SOLUTION_PATH"
-Write-Host "[dottest-analyze] DOTTEST_HOME  = $env:DOTTEST_HOME"
+Write-Output "[dottest-analyze] SOLUTION_PATH = $env:SOLUTION_PATH"
+Write-Output "[dottest-analyze] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 # Change working directory to solution directory
 Set-Location -Path $env:OUTPUT_DIR
@@ -55,19 +55,28 @@ Set-Location -Path $env:OUTPUT_DIR
 if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
     # Fix verification: Create numbered fix report directory
     $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\static-analysis"
-    Write-Host "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
+    Write-Output "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
 } else {
     # Initial analysis: Create baseline report directory
     $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
-    Write-Host "[dottest-analyze] Mode: Initial baseline analysis"
+    Write-Output "[dottest-analyze] Mode: Initial baseline analysis"
+
+    # If a baseline report is already provided, check whether it was produced with the
+    # same test configuration. If so, skip re-running the analysis and reuse it.
+    if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "" -and (Test-Path $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)) {
+        Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
+        Write-Output "[dottest-analyze] Skipping initial analysis — reusing existing baseline."
+        Write-Output "REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
+        exit 0
+    }
 }
 
 # Create report directory if it doesn't exist (including all parent directories)
 if (-not (Test-Path -Path $reportDir)) {
     New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
-    Write-Host "[dottest-analyze] Created report directory: $reportDir"
+    Write-Output "[dottest-analyze] Created report directory: $reportDir"
 } else {
-    Write-Host "[dottest-analyze] Using existing report directory: $reportDir"
+    Write-Output "[dottest-analyze] Using existing report directory: $reportDir"
 }
 
 # =============================================================================
@@ -98,7 +107,7 @@ if ($isFixRun -or $hasFixedFiles) {
             $argList += @("-include", $includeValue)
         }
     }
-    Write-Host "[dottest-analyze] Analyzing fixed files: $($env:DOTTEST_FIXED_FILES)"
+    Write-Output "[dottest-analyze] Analyzing fixed files: $($env:DOTTEST_FIXED_FILES)"
 } else {
     # First run: use DOTTEST_INCLUDE scope from user request
     if ($env:DOTTEST_INCLUDE -and $env:DOTTEST_INCLUDE -ne "") {
@@ -109,7 +118,7 @@ if ($isFixRun -or $hasFixedFiles) {
                 $argList += @("-include", $includeValue)
             }
         }
-        Write-Host "[dottest-analyze] Analyzing specific files: $($env:DOTTEST_INCLUDE)"
+        Write-Output "[dottest-analyze] Analyzing specific files: $($env:DOTTEST_INCLUDE)"
     }
     # DOTTEST_EXCLUDE: Limit analysis to specific file(s)
     # Used during fix verification to exclude files based on user input
@@ -122,7 +131,7 @@ if ($isFixRun -or $hasFixedFiles) {
                 $argList += @("-exclude", $excludeValue)
             }
         }
-        Write-Host "[dottest-analyze] Analyzing specific resources: $($env:DOTTEST_EXCLUDE)"
+        Write-Output "[dottest-analyze] Analyzing specific resources: $($env:DOTTEST_EXCLUDE)"
     }
 }
 
@@ -130,14 +139,14 @@ if ($isFixRun -or $hasFixedFiles) {
 # Can specify custom configurations, exclusions, or analysis parameters
 if ($env:DOTTEST_SETTINGS -and $env:DOTTEST_SETTINGS -ne "") {
     $argList += @("-settings", $env:DOTTEST_SETTINGS)
-    Write-Host "[dottest-analyze] Using settings file: $($env:DOTTEST_SETTINGS)"
+    Write-Output "[dottest-analyze] Using settings file: $($env:DOTTEST_SETTINGS)"
 }
 
 # DOTTEST_REF_REPORT_FILE: Baseline report for comparison
 # Used during fix verification to compare results against the initial baseline
 if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
     $argList += @("-property", "goal.ref.report.file=$($env:DOTTEST_REF_REPORT_FILE)")
-    Write-Host "[dottest-analyze] Using baseline report: $($env:DOTTEST_REF_REPORT_FILE)"
+    Write-Output "[dottest-analyze] Using baseline report: $($env:DOTTEST_REF_REPORT_FILE)"
 }
 
 # DOTTEST_REF_REPORT_EXCLUDE: Control which findings to include in comparison
@@ -156,7 +165,7 @@ if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
     $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
 }
 
-Write-Host "[dottest-analyze] Executing: $dottestExe $($argList -join ' ')"
+Write-Output "[dottest-analyze] Executing: $dottestExe $($argList -join ' ')"
 
 # =============================================================================
 # STEP 3: Execute dotTEST analysis
@@ -182,11 +191,11 @@ if ($exitCode -ne 0) {
 }
 
 # Analysis succeeded
-Write-Host "[dottest-analyze] Analysis completed successfully."
+Write-Output "[dottest-analyze] Analysis completed successfully."
 
 # Construct and output the path to the generated report.xml
 # The skill will parse this line to locate the report for downstream processing
 $reportXml = Join-Path $reportDir "report.xml"
-Write-Host "REPORT_XML=$reportXml"
+Write-Output "REPORT_XML=$reportXml"
 
 exit 0

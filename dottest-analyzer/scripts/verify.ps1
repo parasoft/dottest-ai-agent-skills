@@ -33,8 +33,8 @@
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "[verify] SOLUTION_PATH = $env:SOLUTION_PATH"
-Write-Host "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
+Write-Output "[verify] SOLUTION_PATH = $env:SOLUTION_PATH"
+Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 Set-Location -Path $env:OUTPUT_DIR
 
@@ -51,10 +51,10 @@ $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 if ($buildOnlyMode) {
     if ($disableTests) {
         # SCENARIO 3: Unit tests disabled - just build
-        Write-Host "[verify] DISABLE_UNIT_TEST_VERIFICATION is set. Verifying build only..."
+        Write-Output "[verify] DISABLE_UNIT_TEST_VERIFICATION is set. Verifying build only..."
     } else {
         # SCENARIO 2a: Baseline provided + initial verification - just build
-        Write-Host "[verify] Baseline files provided. Verifying build only..."
+        Write-Output "[verify] Baseline files provided. Verifying build only..."
     }
     $buildMethods = @(
         @{ Command = "devenv"; Args = @("$env:SOLUTION_PATH", "/build"); Display = "devenv `"$env:SOLUTION_PATH`" /build" },
@@ -69,12 +69,12 @@ if ($buildOnlyMode) {
     foreach ($method in $buildMethods) {
         $cmd = Get-Command $method.Command -ErrorAction SilentlyContinue
         if (-not $cmd) {
-            Write-Host "[verify] '$($method.Command)' not found. Trying next build method..."
+            Write-Output "[verify] '$($method.Command)' not found. Trying next build method..."
             continue
         }
 
         $attemptedBuild = $true
-        Write-Host "[verify] Running: $($method.Display)"
+        Write-Output "[verify] Running: $($method.Display)"
         & $method.Command @($method.Args) > "$env:OUTPUT_DIR\build_output.txt"
         $exitCode = $LASTEXITCODE
 
@@ -96,24 +96,24 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
     
-    Write-Host "[verify] Build completed successfully."
+    Write-Output "[verify] Build completed successfully."
     exit 0
     
 } else {
     # SCENARIO 1 / 2b: Run tests with coverage (baseline creation or TIA fix verification)
     if ($hasBaseline) {
         # SCENARIO 2b: Baseline provided + fix verification - run tests with TIA
-        Write-Host "[verify] Running tests with TIA using baseline files..."
+        Write-Output "[verify] Running tests with TIA using baseline files..."
         $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\unit-tests"
     } else {
         # SCENARIO 1: No baseline - create baseline by running tests with coverage
-        Write-Host "[verify] No baseline files provided. Running tests with coverage to create baseline..."
+        Write-Output "[verify] No baseline files provided. Running tests with coverage to create baseline..."
         $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
     }
 
     if (-not (Test-Path -Path $reportDir)) {
         New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
-        Write-Host "[verify] Created report directory: $reportDir"
+        Write-Output "[verify] Created report directory: $reportDir"
     }
 
     $dottestExe = Join-Path $env:DOTTEST_HOME "dottestcli.exe"
@@ -142,7 +142,7 @@ if ($buildOnlyMode) {
     #    $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
     #}
 
-    Write-Host "[verify] Running: $dottestExe $($argList -join ' ')"
+    Write-Output "[verify] Running: $dottestExe $($argList -join ' ')"
 
     & $dottestExe @argList > "$reportDir\dottestcli_output.txt"
     $exitCode = $LASTEXITCODE
@@ -153,7 +153,7 @@ if ($buildOnlyMode) {
     }
 
     if (-not $hasBaseline) {
-        Write-Host "[verify] Baseline created."
+        Write-Output "[verify] Baseline created."
 
         # Set baseline paths for subsequent steps
         $baselineReport = Join-Path $reportDir "report.xml"
@@ -162,13 +162,13 @@ if ($buildOnlyMode) {
         $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineReport
         $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineCoverage
 
-        Write-Host "DOTTEST_BASE_UNIT_TEST_REPORT=$baselineReport"
-        Write-Host "DOTTEST_BASE_UNIT_TEST_COVERAGE=$baselineCoverage"
+        Write-Output "DOTTEST_BASE_UNIT_TEST_REPORT=$baselineReport"
+        Write-Output "DOTTEST_BASE_UNIT_TEST_COVERAGE=$baselineCoverage"
     }
 
-    Write-Host "[verify] Tests completed successfully."
+    Write-Output "[verify] Tests completed successfully."
         $reportXml = Join-Path $reportDir "report.xml"
-        Write-Host "REPORT_XML=$reportXml"
+        Write-Output "REPORT_XML=$reportXml"
 
     exit 0
 }

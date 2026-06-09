@@ -90,7 +90,7 @@ if (-not $env:OUTPUT_DIR -or $env:OUTPUT_DIR -eq "") {
 # Ensure OUTPUT_DIR exists
 if (-not (Test-Path -Path $env:OUTPUT_DIR)) {
     New-Item -ItemType Directory -Path $env:OUTPUT_DIR -Force | Out-Null
-    Write-Host "[resolve-config] Created output directory: $env:OUTPUT_DIR"
+    Write-Output "[resolve-config] Created output directory: $env:OUTPUT_DIR"
 }
 
 # ---- DOTTEST_TEST_CONFIGURATION -----------------------------------------------
