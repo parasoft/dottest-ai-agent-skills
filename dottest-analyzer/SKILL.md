@@ -154,15 +154,14 @@ If unit tests were executed, check that there are no unit test failures in the `
 
 ### Step 3: Run dotTEST Analysis
 
-**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` check if report exists and its test configuration (`pseudoUrl` attribute of `<TestConfig>` element) match (or is similar to) `DOTTEST_TEST_CONFIGURATION`, if so skip to Step 4.** Otherwise, run the full dotTEST analysis to produce the baseline report.
+**Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
-Before calling the script, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1 (e.g. `**/com/foo/**;**/Bar.cs`), or an empty string if no scope was requested.
+**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` check if report exists and its test configuration (`pseudoUrl` attribute of `<TestConfig>` element) match (or is similar to) `DOTTEST_TEST_CONFIGURATION`, if so skip to Step 4.** Otherwise, run the full dotTEST analysis to produce the baseline report, by running the `dottest-analyze.ps1` script with the appropriate environment variables set. This will be the mandatory input for all subsequent steps. Before calling the script, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1 (e.g. `**/com/foo/**;**/Bar.cs`), or an empty string if no scope was requested.
 
 Call the `dottest-analyze.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_SETTINGS`, `DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`.
 
 The script **must** exit with code `0` on success and a non-zero code on failure, and always prints `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
-
 
 ### Step 4: Collect Violations
 
