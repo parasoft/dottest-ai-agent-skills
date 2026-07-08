@@ -144,6 +144,7 @@ if ($buildOnlyMode) {
 
     Write-Output "[verify] Running: $dottestExe $($argList -join ' ')"
 
+    $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
     & $dottestExe @argList > "$reportDir\dottestcli_output.txt"
     $exitCode = $LASTEXITCODE
 

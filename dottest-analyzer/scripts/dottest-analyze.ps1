@@ -171,6 +171,7 @@ Write-Output "[dottest-analyze] Executing: $dottestExe $($argList -join ' ')"
 # STEP 3: Execute dotTEST analysis
 # =============================================================================
 # Run the dotTEST CLI with the constructed arguments
+$env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
 & $dottestExe @argList > "$reportDir\dottestcli_output.txt"
 
 # Capture the exit code from dotTEST
