@@ -25,6 +25,7 @@
 #   OUTPUT_DIR                         – Absolute path to the directory where output will be stored (may be empty)
 #   FIX_NUMBER                         – Set during fix verification (Step 7), empty during initial verification (Step 2)
 #   DISABLE_UNIT_TEST_VERIFICATION     – Set to "true" to skip all unit test execution (defaults to "false")
+#   DISABLE_INITIAL_BUILD              – Set to "true" to skip initial build verification (defaults to "false")
 #
 # Exit codes:
 #   0  – Verification completed successfully
@@ -49,6 +50,11 @@ $isFixVerification = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 
 if ($buildOnlyMode) {
+    if ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true") {
+        Write-Output "[verify] DISABLE_INITIAL_BUILD is set to true. Skipping build verification."
+        exit 0
+    }
+
     if ($disableTests) {
         # SCENARIO 3: Unit tests disabled - just build
         Write-Output "[verify] DISABLE_UNIT_TEST_VERIFICATION is set. Verifying build only..."

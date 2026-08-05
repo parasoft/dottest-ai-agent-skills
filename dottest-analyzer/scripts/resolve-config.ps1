@@ -40,7 +40,8 @@ $recognizedKeys = @(
     "DOTTEST_BASE_STATIC_ANALYSIS_REPORT", "FIXES_BRANCH_NAME",
     "DOTTEST_BASE_UNIT_TEST_REPORT", "DOTTEST_BASE_UNIT_TEST_COVERAGE",
     "DISABLE_UNIT_TEST_VERIFICATION", "DOTTEST_STATIC_NO_OF_MAX_FIXES",
-    "DOTTEST_FIX_ATTEMPTS", "DOTTEST_REFERENCE_BRANCH", "DOTTEST_BUILDER"
+    "DOTTEST_FIX_ATTEMPTS", "DOTTEST_REFERENCE_BRANCH", "DOTTEST_BUILDER",
+    "DISABLE_INITIAL_BUILD"
 )
 
 $configPath = $env:DOTTEST_ANALYZER_CONFIG
@@ -106,6 +107,11 @@ if (-not $env:DOTTEST_COMMIT_FIXES -or $env:DOTTEST_COMMIT_FIXES -eq "") {
 # ---- DISABLE_UNIT_TEST_VERIFICATION -------------------------------------------
 if (-not $env:DISABLE_UNIT_TEST_VERIFICATION -or $env:DISABLE_UNIT_TEST_VERIFICATION -eq "") {
     $env:DISABLE_UNIT_TEST_VERIFICATION = "false"
+}
+
+# ---- DISABLE_INITIAL_BUILD -------------------------------------------
+if (-not $env:DISABLE_INITIAL_BUILD -or $env:DISABLE_INITIAL_BUILD -eq "") {
+    $env:DISABLE_INITIAL_BUILD = "false"
 }
 
 # ---- DOTTEST_FILTER_RULE -------------------------------------------
@@ -226,7 +232,6 @@ if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
 
     $env:GIT_WORKSPACE = $gitWorkspace
     $env:GIT_BRANCH = $gitBranch
-    $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
 }
 
 
@@ -263,6 +268,7 @@ Resolved configuration:
   DOTTEST_TEST_CONFIGURATION          = $($env:DOTTEST_TEST_CONFIGURATION)
   DOTTEST_COMMIT_FIXES                = $($env:DOTTEST_COMMIT_FIXES)
   DISABLE_UNIT_TEST_VERIFICATION      = $($env:DISABLE_UNIT_TEST_VERIFICATION)
+  DISABLE_INITIAL_BUILD               = $($env:DISABLE_INITIAL_BUILD)
   DOTTEST_FILTER_RULE                 = $filterDisplay
   DOTTEST_SETTINGS                    = $settingsDisplay
   DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $baseStaticAnalysisDisplay
