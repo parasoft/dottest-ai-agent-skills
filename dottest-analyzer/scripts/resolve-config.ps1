@@ -14,7 +14,7 @@
 #   DOTTEST_BASE_STATIC_ANALYSIS_REPORT, FIXES_BRANCH_NAME,
 #   DOTTEST_BASE_UNIT_TEST_REPORT, DOTTEST_BASE_UNIT_TEST_COVERAGE,
 #   DOTTEST_STATIC_NO_OF_MAX_FIXES, DOTTEST_FIX_ATTEMPTS, DOTTEST_REFERENCE_BRANCH,
-#   GIT_BRANCH, GIT_WORKSPACE
+#   DOTTEST_BUILDER, GIT_BRANCH, GIT_WORKSPACE
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +40,7 @@ $recognizedKeys = @(
     "DOTTEST_BASE_STATIC_ANALYSIS_REPORT", "FIXES_BRANCH_NAME",
     "DOTTEST_BASE_UNIT_TEST_REPORT", "DOTTEST_BASE_UNIT_TEST_COVERAGE",
     "DISABLE_UNIT_TEST_VERIFICATION", "DOTTEST_STATIC_NO_OF_MAX_FIXES",
-    "DOTTEST_FIX_ATTEMPTS", "DOTTEST_REFERENCE_BRANCH"
+    "DOTTEST_FIX_ATTEMPTS", "DOTTEST_REFERENCE_BRANCH", "DOTTEST_BUILDER"
 )
 
 $configPath = $env:DOTTEST_ANALYZER_CONFIG
@@ -173,6 +173,17 @@ if (-not ($env:DOTTEST_FIX_ATTEMPTS -as [int]) -or [int]$env:DOTTEST_FIX_ATTEMPT
     Die "DOTTEST_FIX_ATTEMPTS must be a positive integer. Current value: $($env:DOTTEST_FIX_ATTEMPTS)."
 }
 
+# ---- DOTTEST_BUILDER ---------------------------------------------------------
+if (-not $env:DOTTEST_BUILDER) {
+    $env:DOTTEST_BUILDER = ""
+} else {
+    $validBuilders = @("DEVENV", "DOTNET", "MSBUILD")
+    if ($env:DOTTEST_BUILDER -ne "" -and $validBuilders -notcontains $env:DOTTEST_BUILDER.ToUpper()) {
+        Die "DOTTEST_BUILDER has an invalid value: '$($env:DOTTEST_BUILDER)'. Acceptable values are: $($validBuilders -join ', ')."
+    }
+    $env:DOTTEST_BUILDER = $env:DOTTEST_BUILDER.ToUpper()
+}
+
 # ---- DOTTEST_REFERENCE_BRANCH ----------------------------------------------------
 if (-not $env:DOTTEST_REFERENCE_BRANCH) { $env:DOTTEST_REFERENCE_BRANCH = "" }
 
@@ -215,7 +226,9 @@ if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
 
     $env:GIT_WORKSPACE = $gitWorkspace
     $env:GIT_BRANCH = $gitBranch
+    $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
 }
+
 
 # =============================================================================
 # Step 2: Verify dotTEST installation
@@ -236,6 +249,7 @@ $baseStaticAnalysisDisplay = if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $
 $baseUnitTestDisplay = if ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") { $env:DOTTEST_BASE_UNIT_TEST_REPORT } else { "(not set)" }
 $baseCoverageDisplay = if ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "") { $env:DOTTEST_BASE_UNIT_TEST_COVERAGE } else { "(not set)" }
 $maxFixesDisplay = if ($env:DOTTEST_STATIC_NO_OF_MAX_FIXES -and $env:DOTTEST_STATIC_NO_OF_MAX_FIXES -ne "") { $env:DOTTEST_STATIC_NO_OF_MAX_FIXES } else { "(not set)" }
+$builderDisplay = if ($env:DOTTEST_BUILDER -and $env:DOTTEST_BUILDER -ne "") { $env:DOTTEST_BUILDER } else { "(not set)" }
 $targetBranchDisplay = if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") { $env:DOTTEST_REFERENCE_BRANCH } else { "(not set)" }
 $gitBranchDisplay = if ($env:GIT_BRANCH -and $env:GIT_BRANCH -ne "") { $env:GIT_BRANCH } else { "(not set)" }
 $gitWorkspaceDisplay = if ($env:GIT_WORKSPACE -and $env:GIT_WORKSPACE -ne "") { $env:GIT_WORKSPACE } else { "(not set)" }
@@ -257,6 +271,7 @@ Resolved configuration:
   DOTTEST_STATIC_NO_OF_MAX_FIXES      = $maxFixesDisplay
   FIXES_BRANCH_NAME                   = $(if ($env:FIXES_BRANCH_NAME -and $env:FIXES_BRANCH_NAME -ne '') { $env:FIXES_BRANCH_NAME } else { '(current branch)' })
   DOTTEST_FIX_ATTEMPTS                = $($env:DOTTEST_FIX_ATTEMPTS)
+  DOTTEST_BUILDER                     = $builderDisplay
   DOTTEST_REFERENCE_BRANCH            = $targetBranchDisplay
   GIT_BRANCH                          = $gitBranchDisplay
   GIT_WORKSPACE                       = $gitWorkspaceDisplay

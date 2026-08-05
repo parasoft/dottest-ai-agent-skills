@@ -62,6 +62,14 @@ if ($buildOnlyMode) {
         @{ Command = "msbuild"; Args = @("$env:SOLUTION_PATH"); Display = "msbuild `"$env:SOLUTION_PATH`"" }
     )
 
+    if ($env:DOTTEST_BUILDER -and $env:DOTTEST_BUILDER -ne "") {
+        $builderCommandMap = @{ "DEVENV" = "devenv"; "DOTNET" = "dotnet"; "MSBUILD" = "msbuild" }
+        $targetCommand = $builderCommandMap[$env:DOTTEST_BUILDER.ToUpper()]
+        $buildMethods = $buildMethods | Where-Object { $_.Command -eq $targetCommand }
+        Write-Output "[verify] DOTTEST_BUILDER is set to '$($env:DOTTEST_BUILDER)'. Using '$targetCommand' only."
+    }
+
+    $buildMethodNames = ($buildMethods | ForEach-Object { $_.Command }) -join ', '
     $attemptedBuild = $false
     $buildSucceeded = $false
     $exitCode = 1
@@ -87,12 +95,12 @@ if ($buildOnlyMode) {
     }
 
     if (-not $attemptedBuild) {
-        Write-Error "ERROR: None of devenv, dotnet, or msbuild were found. Cannot build solution."
+        Write-Error "ERROR: None of the following build tools were found: $buildMethodNames. Cannot build solution."
         exit 1
     }
 
     if (-not $buildSucceeded) {
-        Write-Error "ERROR: Solution build failed with code $exitCode using all available build methods."
+        Write-Error "ERROR: Solution build failed with code $exitCode using: $buildMethodNames."
         exit $exitCode
     }
     
@@ -131,6 +139,13 @@ if ($buildOnlyMode) {
 
     if ($env:DOTTEST_SETTINGS -and $env:DOTTEST_SETTINGS -ne "") {
         $argList += @("-settings", $env:DOTTEST_SETTINGS)
+    }
+
+    if ($env:DOTTEST_BUILDER -and $env:DOTTEST_BUILDER -ne "") {
+        $builderMap = @{ "DEVENV" = "visualstudio"; "DOTNET" = "dotnet"; "MSBUILD" = "msbuild" }
+        $builderValue = $builderMap[$env:DOTTEST_BUILDER.ToUpper()]
+        $argList += @("-property", "dottest.build.builder_id=$builderValue")
+        Write-Output "[verify] Using builder: $builderValue"
     }
 
     #if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {

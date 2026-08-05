@@ -155,6 +155,14 @@ if ($env:DOTTEST_REF_REPORT_EXCLUDE -and $env:DOTTEST_REF_REPORT_EXCLUDE -ne "")
     $argList += @("-property", "goal.ref.report.findings.exclude=$($env:DOTTEST_REF_REPORT_EXCLUDE)")
 }
 
+# DOTTEST_BUILDER: Builder to use for compilation
+# Maps DEVENV -> visualstudio, DOTNET -> dotnet, MSBUILD -> msbuild
+if ($env:DOTTEST_BUILDER -and $env:DOTTEST_BUILDER -ne "") {
+    $builderMap = @{ "DEVENV" = "visualstudio"; "DOTNET" = "dotnet"; "MSBUILD" = "msbuild" }
+    $builderValue = $builderMap[$env:DOTTEST_BUILDER.ToUpper()]
+    $argList += @("-property", "dottest.build.builder_id=$builderValue")
+    Write-Output "[dottest-analyze] Using builder: $builderValue"
+}
 
 if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
     $argList += @("-property", "scope.scontrol=true")
