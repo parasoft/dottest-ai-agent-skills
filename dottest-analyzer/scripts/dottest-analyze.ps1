@@ -21,7 +21,7 @@
 # OUTPUT:
 #   Creates report.xml in one of two locations:
 #   - Initial analysis: [solution_dir]\parasoft-dottest-reports\baseline\report.xml
-#   - Fix verification: [solution_dir]\parasoft-dottest-reports\fix[FIX_NUMBER]\report.xml
+#   - Fix verification: [solution_dir]\parasoft-dottest-reports\fix-[FIX_NUMBER]\static-analysis\report.xml
 #   
 #   Prints the absolute path on the LAST line as: REPORT_XML=<path>
 #
@@ -44,18 +44,34 @@ Set-Location -Path $env:OUTPUT_DIR
 # STEP 1: Determine report output directory
 # =============================================================================
 # Two scenarios:
-# 1. Fix verification run: Reference report file is provided
-#    -> Save to: [solution_dir]\parasoft-dottest-reports\fix[N]\
+# 1. Fix verification run: FIX_NUMBER is provided
+#    -> Save to: [solution_dir]\parasoft-dottest-reports\fix-N\static-analysis\
 #    -> This report will be compared against the baseline
 
 # 2. Initial baseline analysis: No reference report file provided
 #    -> Save to: [solution_dir]\parasoft-dottest-reports\baseline\
 #    -> This report will be used as baseline for future fix verifications
 
-if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
+# FIX_NUMBER is the authoritative indicator that this is a fix verification run.
+# Do not infer the output location only from DOTTEST_REF_REPORT_FILE: if that
+# variable is missing or was not inherited by the agent shell, a fix must still
+# never write into the baseline directory.
+$isFixRun = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
+
+if ($isFixRun -and $env:FIX_NUMBER -notmatch '^[1-9][0-9]*$') {
+    Write-Error "ERROR: FIX_NUMBER must be a positive integer for fix verification."
+    exit 1
+}
+
+if ($isFixRun) {
     # Fix verification: Create numbered fix report directory
     $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\static-analysis"
     Write-Output "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
+
+    if (-not $env:DOTTEST_REF_REPORT_FILE -or $env:DOTTEST_REF_REPORT_FILE -eq "") {
+        Write-Error "ERROR: DOTTEST_REF_REPORT_FILE is required for fix verification."
+        exit 1
+    }
 } else {
     # Initial analysis: Create baseline report directory
     $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
@@ -96,7 +112,6 @@ $argList = @(
 # Add optional arguments if environment variables are set
 
 # Scope selection: first run uses DOTTEST_INCLUDE; fix verification runs use DOTTEST_FIXED_FILES
-$isFixRun = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
 $hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
 if ($isFixRun -or $hasFixedFiles) {
     # Fix verification: scope to the exact files that were changed
