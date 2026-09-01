@@ -10,13 +10,12 @@
 #   SOLUTION_PATH              - Full path to .sln file to analyze
 #
 # OPTIONAL ENVIRONMENT VARIABLES:
-#   DOTTEST_TEST_CONFIGURATION - Test configuration name (default: "builtin://Recommended Rules")
-#   DOTTEST_SETTINGS           - Path to dotTEST settings file (empty = not used)
-#   DOTTEST_INCLUDE            - Specific file path to analyze (empty = analyze all)
-#   DOTTEST_EXCLUDE            - Specific file path to exclude from analysis (empty = analyze all)
-#   DOTTEST_REF_REPORT_FILE    - Path to baseline report.xml for fix verification (empty = initial analysis)
-#   DOTTEST_REF_REPORT_EXCLUDE - Set to "false" for fix verification (empty = initial analysis)
-#   FIX_NUMBER                 - Sequential fix number (e.g., "1", "2", "3") for fix verification runs
+#   DOTTEST_TEST_CONFIGURATION             - Test configuration name (default: "builtin://Recommended Rules")
+#   DOTTEST_SETTINGS                       - Path to dotTEST settings file (empty = not used)
+#   DOTTEST_INCLUDE                        - Specific file path to analyze (empty = analyze all)
+#   DOTTEST_EXCLUDE                        - Specific file path to exclude from analysis (empty = analyze all)
+#   DOTTEST_BASE_STATIC_ANALYSIS_REPORT    - Path to baseline report.xml for fix verification (empty = initial analysis)
+#   FIX_NUMBER                             - Sequential fix number (e.g., "1", "2", "3") for fix verification runs
 #
 # OUTPUT:
 #   Creates report.xml in one of two locations:
@@ -53,10 +52,16 @@ Set-Location -Path $env:OUTPUT_DIR
 #    -> This report will be used as baseline for future fix verifications
 
 # FIX_NUMBER is the authoritative indicator that this is a fix verification run.
-# Do not infer the output location only from DOTTEST_REF_REPORT_FILE: if that
+# Do not infer the output location only from DOTTEST_BASE_STATIC_ANALYSIS_REPORT: if that
 # variable is missing or was not inherited by the agent shell, a fix must still
 # never write into the baseline directory.
 $isFixRun = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
+$hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
+
+if ($hasFixedFiles -and -not $isFixRun) {
+    Write-Error "ERROR: DOTTEST_FIXED_FILES is set but FIX_NUMBER is missing. Refusing to write a fix analysis into the baseline directory."
+    exit 1
+}
 
 if ($isFixRun -and $env:FIX_NUMBER -notmatch '^[1-9][0-9]*$') {
     Write-Error "ERROR: FIX_NUMBER must be a positive integer for fix verification."
@@ -68,8 +73,8 @@ if ($isFixRun) {
     $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\static-analysis"
     Write-Output "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
 
-    if (-not $env:DOTTEST_REF_REPORT_FILE -or $env:DOTTEST_REF_REPORT_FILE -eq "") {
-        Write-Error "ERROR: DOTTEST_REF_REPORT_FILE is required for fix verification."
+    if (-not $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -or $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -eq "") {
+        Write-Error "ERROR: DOTTEST_BASE_STATIC_ANALYSIS_REPORT is required for fix verification."
         exit 1
     }
 } else {
@@ -112,7 +117,6 @@ $argList = @(
 # Add optional arguments if environment variables are set
 
 # Scope selection: first run uses DOTTEST_INCLUDE; fix verification runs use DOTTEST_FIXED_FILES
-$hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
 if ($isFixRun -or $hasFixedFiles) {
     # Fix verification: scope to the exact files that were changed
     $includes = $env:DOTTEST_FIXED_FILES -split ';'
@@ -157,17 +161,11 @@ if ($env:DOTTEST_SETTINGS -and $env:DOTTEST_SETTINGS -ne "") {
     Write-Output "[dottest-analyze] Using settings file: $($env:DOTTEST_SETTINGS)"
 }
 
-# DOTTEST_REF_REPORT_FILE: Baseline report for comparison
+# DOTTEST_BASE_STATIC_ANALYSIS_REPORT: Baseline report for comparison
 # Used during fix verification to compare results against the initial baseline
-if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
-    $argList += @("-property", "goal.ref.report.file=$($env:DOTTEST_REF_REPORT_FILE)")
-    Write-Output "[dottest-analyze] Using baseline report: $($env:DOTTEST_REF_REPORT_FILE)"
-}
-
-# DOTTEST_REF_REPORT_EXCLUDE: Control which findings to include in comparison
-# Set to "false" during fix verification to include all findings relative to baseline
-if ($env:DOTTEST_REF_REPORT_EXCLUDE -and $env:DOTTEST_REF_REPORT_EXCLUDE -ne "") {
-    $argList += @("-property", "goal.ref.report.findings.exclude=$($env:DOTTEST_REF_REPORT_EXCLUDE)")
+if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "") {
+    $argList += @("-property", "goal.ref.report.file=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)")
+    Write-Output "[dottest-analyze] Using baseline report: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
 }
 
 # DOTTEST_BUILDER: Builder to use for compilation
@@ -177,6 +175,15 @@ if ($env:DOTTEST_BUILDER -and $env:DOTTEST_BUILDER -ne "") {
     $builderValue = $builderMap[$env:DOTTEST_BUILDER.ToUpper()]
     $argList += @("-property", "dottest.build.builder_id=$builderValue")
     Write-Output "[dottest-analyze] Using builder: $builderValue"
+}
+
+# verify.ps1 may already have built the solution, either through a configured
+# builder or through dottestcli while running tests. Avoid performing the same
+# build again. If verification was skipped, leave this unset/false so analysis
+# performs the required build itself.
+if ($env:DOTTEST_BUILD_PERFORMED -and $env:DOTTEST_BUILD_PERFORMED -eq "true") {
+    $argList += @("-nobuild")
+    Write-Output "[dottest-analyze] Verification already built the solution; using -nobuild."
 }
 
 if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {

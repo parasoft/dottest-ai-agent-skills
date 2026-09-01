@@ -145,6 +145,12 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 Call the `verify.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_BUILDER`.
 
+After verification, preserve its `DOTTEST_BUILD_PERFORMED` process marker. If
+verification built the solution directly or through `dottestcli`,
+`dottest-analyze.ps1` adds `-nobuild`. If verification was skipped because
+`DISABLE_INITIAL_BUILD=true`, the marker remains `false` and analysis performs
+the required build.
+
 The script **must** exit with code `0` on success and a non-zero code on failure.
 
 **If the script fails (non-zero exit code)**: print `ERROR: Solution build or unit tests failed. Fix compilation errors or failing tests before running analysis.` followed by the script output, and terminate immediately.
@@ -158,10 +164,16 @@ If unit tests were executed, check that there are no unit test failures in the `
 
 **If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, then skip this Step and proceed to Step 4**. Otherwise, run the full dotTEST analysis to produce the baseline report, by running the `dottest-analyze.ps1` script with the appropriate environment variables set. This will be the mandatory input for all subsequent steps. Before calling the script, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1 (e.g. `**/com/foo/**;**/Bar.cs`), or an empty string if no scope was requested.
 
+The baseline analysis must complete before any `dottest-fix-violation` agent is
+spawned. A fix agent must never create or reuse a new baseline; it must use the
+baseline report produced by this step as its reference report.
+
 Call the `dottest-analyze.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_SETTINGS`, `DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`.
 
 The script **must** exit with code `0` on success and a non-zero code on failure, and always prints `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
+
+**After successful completion of this step, the baseline report file path is available in the `REPORT_XML` value printed by the script. This path must be stored in the `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` environment variable for use in Step 4.**
 
 ### Step 4: Collect Violations
 
@@ -185,7 +197,7 @@ Process violations in the following deterministic order:
 
 ### Step 6: Fix, Verify, and Commit — Delegate to `dottest-fix-violation` Agent
 
-Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean.
+Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
 
 #### Branch Setup (once, before the fix loop)
 
@@ -207,21 +219,21 @@ If `FIXES_BRANCH_NAME` is empty or `DOTTEST_COMMIT_FIXES` is not `true`, commit 
 
 - Inspect the user's natural-language request for an explicit numeric fix limit (e.g. "fix 3 violations", "apply at most 5 fixes"). If found, use that number as the effective limit.
 - Otherwise, use `DOTTEST_STATIC_NO_OF_MAX_FIXES` (default `5`) as the effective limit.
-- Initialize a `successful_fixes` counter to `0` and a `FIX_NUMBER` counter to `1`.
+- Initialize a `successful_fixes` counter to `0` and a `$fix_number` counter to `1`.
 
 #### Invoking the Agent
 
 Before spawning each agent, create the log directory and compute the log file path in the terminal session:
 
 ```powershell
-$agentLogFile = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$env:FIX_NUMBER\agent.log"
+$agentLogFile = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$fix_number\agent.log"
 New-Item -ItemType Directory -Path (Split-Path $agentLogFile) -Force | Out-Null
 ```
 
-The parent shell's `FIX_NUMBER` is not inherited by the isolated subagent.
-`FIX_NUMBER` in the JSON payload is the authoritative value; the subagent must
-set `$env:FIX_NUMBER` from that payload before running any verification or
-analysis script.
+The parent shell's `FIX_NUMBER` is not used for the subagent. The parent must
+place the current `$fix_number` value in the JSON `fixNumber` field. The
+subagent sets `$env:FIX_NUMBER` from that field after running
+`resolve-config.ps1`, before running any verification or analysis script.
 
 `agentLogFile` is the operational conversation log for the
 `dottest-fix-violation` agent. The agent must append its decisions, MCP results,
@@ -230,7 +242,7 @@ use it as a `Tee-Object` target when running `verify.ps1` or
 `dottest-analyze.ps1`; those scripts manage their own output files. Hidden model
 reasoning is not available to the skill and is not included.
 
-For each violation or batch, spawn agent "dottest-fix-violation" and pass a task prompt containing a JSON block. The JSON must include all context the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
+For each violation or batch, spawn agent "dottest-fix-violation" and pass a **task prompt containing a JSON block**. The **JSON must include all context** the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
 
 **Single (complex) violation:**
 ```json
@@ -238,29 +250,8 @@ For each violation or batch, spawn agent "dottest-fix-violation" and pass a task
   "mode": "single",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "environment": {
-    "DOTTEST_HOME": "<DOTTEST_HOME>",
-    "SOLUTION_PATH": "<SOLUTION_PATH>",
-    "OUTPUT_DIR": "<OUTPUT_DIR>",
-    "FIX_NUMBER": "<FIX_NUMBER>",
-    "DOTTEST_ANALYZER_CONFIG": "<DOTTEST_ANALYZER_CONFIG or empty>",
-    "DOTTEST_TEST_CONFIGURATION": "<DOTTEST_TEST_CONFIGURATION>",
-    "DOTTEST_COMMIT_FIXES": "<DOTTEST_COMMIT_FIXES>",
-    "DOTTEST_FILTER_RULE": "<DOTTEST_FILTER_RULE or empty>",
-    "DOTTEST_SETTINGS": "<DOTTEST_SETTINGS or empty>",
-    "DOTTEST_BASE_STATIC_ANALYSIS_REPORT": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
-    "DOTTEST_BASE_UNIT_TEST_REPORT": "<DOTTEST_BASE_UNIT_TEST_REPORT or empty>",
-    "DOTTEST_BASE_UNIT_TEST_COVERAGE": "<DOTTEST_BASE_UNIT_TEST_COVERAGE or empty>",
-    "DISABLE_UNIT_TEST_VERIFICATION": "<DISABLE_UNIT_TEST_VERIFICATION>",
-    "DOTTEST_STATIC_NO_OF_MAX_FIXES": "<DOTTEST_STATIC_NO_OF_MAX_FIXES>",
-    "DOTTEST_FIX_ATTEMPTS": "<DOTTEST_FIX_ATTEMPTS>",
-    "FIXES_BRANCH_NAME": "<FIXES_BRANCH_NAME or empty>",
-    "DOTTEST_REFERENCE_BRANCH": "<DOTTEST_REFERENCE_BRANCH or empty>",
-    "DOTTEST_BUILDER": "<DOTTEST_BUILDER or empty>",
-    "DISABLE_INITIAL_BUILD": "<DISABLE_INITIAL_BUILD>",
-    "GIT_BRANCH": "<GIT_BRANCH or empty>",
-    "GIT_WORKSPACE": "<GIT_WORKSPACE or empty>"
-  },
+  "fixNumber": <fix_number>,
+  "baseReport": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
   "violation": {
     "ruleId": "<rule_id>",
     "sourceFile": "<absolute_path>",
@@ -277,41 +268,20 @@ For each violation or batch, spawn agent "dottest-fix-violation" and pass a task
   "mode": "batch",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "environment": {
-    "DOTTEST_HOME": "<DOTTEST_HOME>",
-    "SOLUTION_PATH": "<SOLUTION_PATH>",
-    "OUTPUT_DIR": "<OUTPUT_DIR>",
-    "FIX_NUMBER": "<fix_number>",
-    "DOTTEST_ANALYZER_CONFIG": "<DOTTEST_ANALYZER_CONFIG or empty>",
-    "DOTTEST_TEST_CONFIGURATION": "<DOTTEST_TEST_CONFIGURATION>",
-    "DOTTEST_COMMIT_FIXES": "<DOTTEST_COMMIT_FIXES>",
-    "DOTTEST_FILTER_RULE": "<DOTTEST_FILTER_RULE or empty>",
-    "DOTTEST_SETTINGS": "<DOTTEST_SETTINGS or empty>",
-    "DOTTEST_BASE_STATIC_ANALYSIS_REPORT": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
-    "DOTTEST_BASE_UNIT_TEST_REPORT": "<DOTTEST_BASE_UNIT_TEST_REPORT or empty>",
-    "DOTTEST_BASE_UNIT_TEST_COVERAGE": "<DOTTEST_BASE_UNIT_TEST_COVERAGE or empty>",
-    "DISABLE_UNIT_TEST_VERIFICATION": "<DISABLE_UNIT_TEST_VERIFICATION>",
-    "DOTTEST_STATIC_NO_OF_MAX_FIXES": "<DOTTEST_STATIC_NO_OF_MAX_FIXES>",
-    "DOTTEST_FIX_ATTEMPTS": "<DOTTEST_FIX_ATTEMPTS>",
-    "FIXES_BRANCH_NAME": "<FIXES_BRANCH_NAME or empty>",
-    "DOTTEST_REFERENCE_BRANCH": "<DOTTEST_REFERENCE_BRANCH or empty>",
-    "DOTTEST_BUILDER": "<DOTTEST_BUILDER or empty>",
-    "DISABLE_INITIAL_BUILD": "<DISABLE_INITIAL_BUILD>",
-    "GIT_BRANCH": "<GIT_BRANCH or empty>",
-    "GIT_WORKSPACE": "<GIT_WORKSPACE or empty>"
-  },
+  "fixNumber": <fix_number>,
+  "baseReport": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
   "violations": [ ... ]
 }
 ```
 
-The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent copies every variable from the JSON `environment` object into its terminal process environment before running scripts.
+The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session before running the workflow scripts, then sets `FIX_NUMBER` from the JSON payload.
 
 #### Collecting Results
 
 Parse the `FIX_RESULT=` JSON line from the agent's output. Update counters:
 
-- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed` and increment `FIX_NUMBER` by `1`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES`, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
-- If `status` is `"FAILURE"`: record the failure, increment `FIX_NUMBER` by `1`, and move on to the next violation.
+- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed` and increment `$fix_number` by `1`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES`, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
+- If `status` is `"FAILURE"`: record the failure, increment `$fix_number` by `1`, and move on to the next violation.
 
 #### Processing Order
 

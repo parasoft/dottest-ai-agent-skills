@@ -21,29 +21,7 @@ The parent agent invokes you with a task prompt containing a JSON block. Parse i
   "mode": "single",
   "scriptDir": "C:\\skills\\dottest-analyzer\\scripts",
   "agentLogFile": "C:\\MySolution\\parasoft-output\\parasoft-dottest-reports\\fix-1\\agent.log",
-  "environment": {
-    "DOTTEST_HOME": "C:\\Program Files\\Parasoft\\dotTEST",
-    "SOLUTION_PATH": "C:\\MySolution\\MySolution.sln",
-    "OUTPUT_DIR": "C:\\MySolution\\parasoft-output",
-    "FIX_NUMBER": "1",
-    "DOTTEST_ANALYZER_CONFIG": "",
-    "DOTTEST_TEST_CONFIGURATION": "builtin://Recommended Rules",
-    "DOTTEST_SETTINGS": "C:\\Reports\\settings.properties",
-    "DOTTEST_COMMIT_FIXES": "true",
-    "DOTTEST_FILTER_RULE": "",
-    "DOTTEST_BASE_STATIC_ANALYSIS_REPORT": "C:\\Reports\\base_report.xml",
-    "DOTTEST_BASE_UNIT_TEST_REPORT": "C:\\Reports\\baseline\\unit-tests\\report.xml",
-    "DOTTEST_BASE_UNIT_TEST_COVERAGE": "C:\\Reports\\baseline\\unit-tests\\coverage.xml",
-    "DISABLE_UNIT_TEST_VERIFICATION": "false",
-    "DOTTEST_STATIC_NO_OF_MAX_FIXES": "5",
-    "DOTTEST_FIX_ATTEMPTS": "2",
-    "FIXES_BRANCH_NAME": "",
-    "DOTTEST_REFERENCE_BRANCH": "",
-    "DOTTEST_BUILDER": "",
-    "DISABLE_INITIAL_BUILD": "false",
-    "GIT_BRANCH": "",
-    "GIT_WORKSPACE": ""
-  },
+  "fixNumber": 1,
   "violation": {
     "ruleId": "BD.PB.ARRAY",
     "sourceFile": "C:\\MySolution\\MyProject\\Foo.cs",
@@ -60,29 +38,7 @@ The parent agent invokes you with a task prompt containing a JSON block. Parse i
   "mode": "batch",
   "scriptDir": "C:\\skills\\dottest-analyzer\\scripts",
   "agentLogFile": "C:\\MySolution\\parasoft-output\\parasoft-dottest-reports\\fix-2\\agent.log",
-  "environment": {
-    "DOTTEST_HOME": "C:\\Program Files\\Parasoft\\dotTEST",
-    "SOLUTION_PATH": "C:\\MySolution\\MySolution.sln",
-    "OUTPUT_DIR": "C:\\MySolution\\parasoft-output",
-    "FIX_NUMBER": "2",
-    "DOTTEST_ANALYZER_CONFIG": "",
-    "DOTTEST_TEST_CONFIGURATION": "builtin://Recommended Rules",
-    "DOTTEST_SETTINGS": "",
-    "DOTTEST_COMMIT_FIXES": "false",
-    "DOTTEST_FILTER_RULE": "",
-    "DOTTEST_BASE_STATIC_ANALYSIS_REPORT": "C:\\Reports\\base_report.xml",
-    "DOTTEST_BASE_UNIT_TEST_REPORT": "",
-    "DOTTEST_BASE_UNIT_TEST_COVERAGE": "",
-    "DISABLE_UNIT_TEST_VERIFICATION": "false",
-    "DOTTEST_STATIC_NO_OF_MAX_FIXES": "5",
-    "DOTTEST_FIX_ATTEMPTS": "2",
-    "FIXES_BRANCH_NAME": "",
-    "DOTTEST_REFERENCE_BRANCH": "",
-    "DOTTEST_BUILDER": "",
-    "DISABLE_INITIAL_BUILD": "false",
-    "GIT_BRANCH": "",
-    "GIT_WORKSPACE": ""
-  },
+  "fixNumber": 2,
   "violations": [
     {
       "ruleId": "SEC.USSCR",
@@ -123,60 +79,78 @@ All workflow scripts are PowerShell scripts located in the `scriptDir` provided 
 & "<scriptDir>\dottest-analyze.ps1"
 ```
 
-All variables in the JSON `environment` object must be available in the
-subagent terminal session before running any script.
+The subagent must resolve the skill environment itself before running any
+workflow script. Run `resolve-config.ps1` in the same PowerShell session using
+dot-sourcing so its variables remain available:
+
+```powershell
+. "<scriptDir>\resolve-config.ps1"
+```
 
 ## Workflow
 
 ### Step 1: Parse Input
 
+**Print to agent output content of the received JSON task file.**
+
 Parse the JSON block from the task prompt. Extract and set:
 - `mode` (`single` or `batch`)
 - `scriptDir` → store for use in script calls
+- `fixNumber` → convert to a non-empty integer string and set as `$env:FIX_NUMBER`
 - `agentLogFile` → use as the agent runtime's transcript log path. Set
   `$env:AGENT_LOG_FILE` in the terminal session if the agent host uses that
   variable for transcript logging.
 - Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`
 
-The `environment` object is the complete environment snapshot from the parent
-skill. **Before running any workflow script**, set each property as enviroment 
-variable into the subagent's **process** environment, excluding empty values. 
-Do not assume that an environment variable from the parent skill was inherited:
+After initializing the agent log, run `resolve-config.ps1` once in the same
+terminal session. Do not construct or copy an environment object from the
+parent. The resolver is the sole source of `SOLUTION_PATH`, `OUTPUT_DIR`,
+`DOTTEST_HOME`, baseline paths, builder settings, and all other skill settings.
+Then set only the per-agent values that are not resolver settings:
 
 ```powershell
-foreach ($property in $workItem.environment.PSObject.Properties) {
-  $value = if ($null -eq $property.Value) { "" } else { [string]$property.Value }
-  [Environment]::SetEnvironmentVariable(
-    $property.Name,
-    $value)
+$env:FIX_NUMBER = [string]$workItem.fixNumber
+$baselineReport = $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT
+if (-not $baselineReport) {
+  $baselineReport = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis\report.xml"
+  if (Test-Path -LiteralPath $baselineReport -PathType Leaf) {
+    $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $baselineReport
+  }
 }
+if (-not $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -or
+    -not (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
+  throw "Baseline static-analysis report was not found. The parent skill must complete baseline analysis before starting a fix agent."
+}
+$env:DOTTEST_BUILD_PERFORMED = "false"
 ```
 
-Then override the per-invocation values from the payload:
+The fix agent must not run an initial/baseline analysis. The parent skill is
+responsible for creating the baseline first. Every call to
+`dottest-analyze.ps1` from this agent must have a valid positive `FIX_NUMBER`
+and an existing `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`; otherwise stop with a failure before
+modifying source code.
+
+Immediately after `resolve-config.ps1` and the per-invocation assignments,
+print every resolved skill variable for debugging. Print the same entries to
+`agentLogFile`. Do not dump unrelated machine or process environment variables:
 
 ```powershell
-$env:SOLUTION_PATH = [IO.Path]::GetFullPath($env:SOLUTION_PATH)
-$env:OUTPUT_DIR = [IO.Path]::GetFullPath($env:OUTPUT_DIR)
-$env:FIX_NUMBER = [string]$env:FIX_NUMBER
-$BASELINE_REPORT_PATH = $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT
-$env:DOTTEST_REF_REPORT_FILE = [IO.Path]::GetFullPath($BASELINE_REPORT_PATH)
-$env:DOTTEST_REF_REPORT_EXCLUDE = "false"
-```
-
-Immediately after the environment has been copied and the per-invocation
-values have been assigned, print every variable from the JSON `environment`
-object for debugging. Print the same entries to `agentLogFile`. Do not dump
-unrelated machine or process environment variables:
-
-```powershell
-foreach ($property in $workItem.environment.PSObject.Properties | Sort-Object Name) {
-  $debugValue = [Environment]::GetEnvironmentVariable($property.Name, "Process")
-  $debugLine = "ENV $($property.Name)=$debugValue"
+Write-Output "Working on following environment:"
+Write-AgentLog "Working on following environment:"
+foreach ($name in @(
+  "DOTTEST_ANALYZER_CONFIG", "DOTTEST_HOME", "SOLUTION_PATH", "OUTPUT_DIR",
+  "DOTTEST_TEST_CONFIGURATION", "DOTTEST_COMMIT_FIXES", "DISABLE_UNIT_TEST_VERIFICATION",
+  "DISABLE_INITIAL_BUILD", "DOTTEST_FILTER_RULE", "DOTTEST_SETTINGS",
+  "DOTTEST_BASE_STATIC_ANALYSIS_REPORT", "DOTTEST_BASE_UNIT_TEST_REPORT",
+  "DOTTEST_BASE_UNIT_TEST_COVERAGE", "DOTTEST_STATIC_NO_OF_MAX_FIXES",
+  "FIXES_BRANCH_NAME", "DOTTEST_FIX_ATTEMPTS", "DOTTEST_REFERENCE_BRANCH",
+  "DOTTEST_BUILDER", "GIT_BRANCH", "GIT_WORKSPACE", "FIX_NUMBER",
+  "DOTTEST_BUILD_PERFORMED"
+)) {
+  $debugLine = "ENV $name=$([Environment]::GetEnvironmentVariable($name, "Process"))"
   Write-Output $debugLine
   Write-AgentLog $debugLine
 }
-Write-AgentLog "ENV DOTTEST_REF_REPORT_FILE=$env:DOTTEST_REF_REPORT_FILE"
-Write-Output "ENV DOTTEST_REF_REPORT_FILE=$env:DOTTEST_REF_REPORT_FILE"
 ```
 
 The subagent is isolated from the parent agent's process environment. Therefore,
@@ -188,7 +162,7 @@ complete handoff after the assignments above:
 if ($env:FIX_NUMBER -notmatch '^[1-9][0-9]*$') {
   throw "Invalid FIX_NUMBER: '$($env:FIX_NUMBER)'"
 }
-Write-AgentLog "FIX_NUMBER=$env:FIX_NUMBER; OUTPUT_DIR=$env:OUTPUT_DIR; DOTTEST_REF_REPORT_FILE=$env:DOTTEST_REF_REPORT_FILE"
+Write-AgentLog "FIX_NUMBER=$env:FIX_NUMBER; OUTPUT_DIR=$env:OUTPUT_DIR"
 ```
 
 The `FIX_NUMBER` value must remain unchanged for all retry attempts for the
@@ -263,8 +237,6 @@ Parse the `REPORT_XML=` value from the last stdout line. Check that there are no
 For each source file modified by the fix, use its full absolute path. Set the following environment variables before calling the script:
 
 ```powershell
-$env:DOTTEST_REF_REPORT_FILE    = "<BASELINE_REPORT_PATH>"
-$env:DOTTEST_REF_REPORT_EXCLUDE = "false"
 $env:DOTTEST_FIXED_FILES        = "<semicolon-separated absolute paths of all changed files>"
 ```
 

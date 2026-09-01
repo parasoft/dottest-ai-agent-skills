@@ -38,6 +38,9 @@ Write-Output "[verify] SOLUTION_PATH = $env:SOLUTION_PATH"
 Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 Set-Location -Path $env:OUTPUT_DIR
+# This marker is consumed by dottest-analyze.ps1 in the same workflow. Reset it
+# for every verification so a previous step cannot suppress a required build.
+$env:DOTTEST_BUILD_PERFORMED = "false"
 
 # ---------------------------------------------------------------------------
 # Determine verification mode
@@ -52,6 +55,7 @@ $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 if ($buildOnlyMode) {
     if ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true") {
         Write-Output "[verify] DISABLE_INITIAL_BUILD is set to true. Skipping build verification."
+        Write-Output "BUILD_PERFORMED=false"
         exit 0
     }
 
@@ -110,6 +114,8 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
     
+    $env:DOTTEST_BUILD_PERFORMED = "true"
+    Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Build completed successfully."
     exit 0
     
@@ -188,6 +194,9 @@ if ($buildOnlyMode) {
         Write-Output "DOTTEST_BASE_UNIT_TEST_COVERAGE=$baselineCoverage"
     }
 
+    # Running dotTEST for tests also performs the solution build.
+    $env:DOTTEST_BUILD_PERFORMED = "true"
+    Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Tests completed successfully."
         $reportXml = Join-Path $reportDir "report.xml"
         Write-Output "REPORT_XML=$reportXml"
