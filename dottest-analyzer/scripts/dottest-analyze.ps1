@@ -15,12 +15,12 @@
 #   DOTTEST_INCLUDE                        - Specific file path to analyze (empty = analyze all)
 #   DOTTEST_EXCLUDE                        - Specific file path to exclude from analysis (empty = analyze all)
 #   DOTTEST_BASE_STATIC_ANALYSIS_REPORT    - Path to baseline report.xml for fix verification (empty = initial analysis)
-#   FIX_NUMBER                             - Sequential fix number (e.g., "1", "2", "3") for fix verification runs
+#   DOTTEST_FIX_MODE                      - Set to true for fix verification runs
 #
 # OUTPUT:
 #   Creates report.xml in one of two locations:
 #   - Initial analysis: [solution_dir]\parasoft-dottest-reports\baseline\report.xml
-#   - Fix verification: [solution_dir]\parasoft-dottest-reports\fix-[FIX_NUMBER]\static-analysis\report.xml
+#   - Fix verification: [solution_dir]\parasoft-dottest-reports\static-analysis\report.xml
 #   
 #   Prints the absolute path on the LAST line as: REPORT_XML=<path>
 #
@@ -43,43 +43,30 @@ Set-Location -Path $env:OUTPUT_DIR
 # STEP 1: Determine report output directory
 # =============================================================================
 # Two scenarios:
-# 1. Fix verification run: FIX_NUMBER is provided
-#    -> Save to: [solution_dir]\parasoft-dottest-reports\fix-N\static-analysis\
+# 1. Fix verification run: DOTTEST_FIX_MODE is true
+#    -> Save to: [solution_dir]\parasoft-dottest-reports\static-analysis\
 #    -> This report will be compared against the baseline
 
 # 2. Initial baseline analysis: No reference report file provided
 #    -> Save to: [solution_dir]\parasoft-dottest-reports\baseline\
 #    -> This report will be used as baseline for future fix verifications
 
-# FIX_NUMBER is the authoritative indicator that this is a fix verification run.
-# Do not infer the output location only from DOTTEST_BASE_STATIC_ANALYSIS_REPORT: if that
-# variable is missing or was not inherited by the agent shell, a fix must still
-# never write into the baseline directory.
-$isFixRun = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
+$isFixRun = ($env:DOTTEST_FIX_MODE -and $env:DOTTEST_FIX_MODE -eq "true")
 $hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
 
-if ($hasFixedFiles -and -not $isFixRun) {
-    Write-Error "ERROR: DOTTEST_FIXED_FILES is set but FIX_NUMBER is missing. Refusing to write a fix analysis into the baseline directory."
-    exit 1
-}
-
-if ($isFixRun -and $env:FIX_NUMBER -notmatch '^[1-9][0-9]*$') {
-    Write-Error "ERROR: FIX_NUMBER must be a positive integer for fix verification."
-    exit 1
-}
-
 if ($isFixRun) {
-    # Fix verification: Create numbered fix report directory
-    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\static-analysis"
+    # Fix verification: use the shared static-analysis report directory
+    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\static-analysis"
     Write-Output "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
 
-    if (-not $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -or $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -eq "") {
-        Write-Error "ERROR: DOTTEST_BASE_STATIC_ANALYSIS_REPORT is required for fix verification."
+    if (-not $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -or
+        -not (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
+        Write-Error "ERROR: DOTTEST_BASE_STATIC_ANALYSIS_REPORT does not point to an existing baseline report."
         exit 1
     }
 } else {
     # Initial analysis: Create baseline report directory
-    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
+    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline"
     Write-Output "[dottest-analyze] Mode: Initial baseline analysis"
 
     # If a baseline report is already provided, check whether it was produced with the
@@ -87,6 +74,7 @@ if ($isFixRun) {
     if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "" -and (Test-Path $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)) {
         Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
         Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."
+
         Write-Output "REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
         exit 0
     }

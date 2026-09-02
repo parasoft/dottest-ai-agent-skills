@@ -145,12 +145,6 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 Call the `verify.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_BUILDER`.
 
-After verification, preserve its `DOTTEST_BUILD_PERFORMED` process marker. If
-verification built the solution directly or through `dottestcli`,
-`dottest-analyze.ps1` adds `-nobuild`. If verification was skipped because
-`DISABLE_INITIAL_BUILD=true`, the marker remains `false` and analysis performs
-the required build.
-
 The script **must** exit with code `0` on success and a non-zero code on failure.
 
 **If the script fails (non-zero exit code)**: print `ERROR: Solution build or unit tests failed. Fix compilation errors or failing tests before running analysis.` followed by the script output, and terminate immediately.
@@ -158,22 +152,48 @@ The script **must** exit with code `0` on success and a non-zero code on failure
 **If `verify` executed unit tests, parse the `REPORT_XML=` value from the last stdout line. If tests were expected but no `REPORT_XML=` line was emitted: FAILURE. If `verify` ran in build-only mode, do not require `REPORT_XML` in Step 2.**
 If unit tests were executed, check that there are no unit test failures in the `REPORT_XML` file. If there are any then print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately.
 
+After verification, preserve its `DOTTEST_BUILD_PERFORMED` process marker. If
+verification built the solution directly or through `dottestcli`,
+`dottest-analyze.ps1` adds `-nobuild`. If verification was skipped because
+`DISABLE_INITIAL_BUILD=true`, the marker remains `false` and analysis performs
+the required build.
+
 ### Step 3: Run dotTEST Analysis
 
 **Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
-**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, then skip this Step and proceed to Step 4**. Otherwise, run the full dotTEST analysis to produce the baseline report, by running the `dottest-analyze.ps1` script with the appropriate environment variables set. This will be the mandatory input for all subsequent steps. Before calling the script, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1 (e.g. `**/com/foo/**;**/Bar.cs`), or an empty string if no scope was requested.
+**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, use that file directly and do not copy it into `OUTPUT_DIR`. Otherwise, delegate baseline analysis to `dottest-fix-violation` in `baseline` mode. Before that invocation, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
+
+Use this baseline payload and embed it directly in the subagent prompt; do not
+write it to disk:
+
+```json
+{
+  "mode": "baseline",
+  "scriptDir": "<absolute path to the scripts directory of this skill>",
+  "agentLogFile": "<agentLogFile>",
+  "scopeInclude": "<DOTTEST_INCLUDE>",
+  "scopeExclude": "<DOTTEST_EXCLUDE>"
+}
+```
+
+The baseline agent must run `resolve-config.ps1` and then
+`dottest-analyze.ps1` in its own terminal session. Parse its final
+`BASELINE_RESULT=` line and set `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` to the
+returned `reportXml` path. Do not run baseline analysis in the parent context.
 
 The baseline analysis must complete before any `dottest-fix-violation` agent is
 spawned. A fix agent must never create or reuse a new baseline; it must use the
 baseline report produced by this step as its reference report.
 
-Call the `dottest-analyze.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_SETTINGS`, `DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`.
+When a baseline path was provided, no analysis command is needed in the parent
+context. The baseline path is already the value of
+`DOTTEST_BASE_STATIC_ANALYSIS_REPORT`.
 
 The script **must** exit with code `0` on success and a non-zero code on failure, and always prints `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
 
-**After successful completion of this step, the baseline report file path is available in the `REPORT_XML` value printed by the script. This path must be stored in the `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` environment variable for use in Step 4.**
+**After successful completion of this step, the baseline report file path must be stored in `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` for use in Step 4.**
 
 ### Step 4: Collect Violations
 
@@ -219,30 +239,20 @@ If `FIXES_BRANCH_NAME` is empty or `DOTTEST_COMMIT_FIXES` is not `true`, commit 
 
 - Inspect the user's natural-language request for an explicit numeric fix limit (e.g. "fix 3 violations", "apply at most 5 fixes"). If found, use that number as the effective limit.
 - Otherwise, use `DOTTEST_STATIC_NO_OF_MAX_FIXES` (default `5`) as the effective limit.
-- Initialize a `successful_fixes` counter to `0` and a `$fix_number` counter to `1`.
+- Initialize a `successful_fixes` counter to `0`.
 
 #### Invoking the Agent
 
-Before spawning each agent, create the log directory and compute the log file path in the terminal session:
+Before spawning each agent, create the log directory in the terminal session:
 
 ```powershell
-$agentLogFile = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$fix_number\agent.log"
+$agentLogFile = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\agent.log"
 New-Item -ItemType Directory -Path (Split-Path $agentLogFile) -Force | Out-Null
 ```
 
-The parent shell's `FIX_NUMBER` is not used for the subagent. The parent must
-place the current `$fix_number` value in the JSON `fixNumber` field. The
-subagent sets `$env:FIX_NUMBER` from that field after running
-`resolve-config.ps1`, before running any verification or analysis script.
+For each violation or batch, populate one of the JSON payloads below and embed it directly in the subagent's prompt text. Do not write the payload to disk.
 
-`agentLogFile` is the operational conversation log for the
-`dottest-fix-violation` agent. The agent must append its decisions, MCP results,
-commands, verification output, retries, and final result to this file. Do not
-use it as a `Tee-Object` target when running `verify.ps1` or
-`dottest-analyze.ps1`; those scripts manage their own output files. Hidden model
-reasoning is not available to the skill and is not included.
-
-For each violation or batch, spawn agent "dottest-fix-violation" and pass a **task prompt containing a JSON block**. The **JSON must include all context** the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
+The payload **must include all context** the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
 
 **Single (complex) violation:**
 ```json
@@ -250,8 +260,7 @@ For each violation or batch, spawn agent "dottest-fix-violation" and pass a **ta
   "mode": "single",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "fixNumber": <fix_number>,
-  "baseReport": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
+  "baselineReportPath": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
   "violation": {
     "ruleId": "<rule_id>",
     "sourceFile": "<absolute_path>",
@@ -268,20 +277,26 @@ For each violation or batch, spawn agent "dottest-fix-violation" and pass a **ta
   "mode": "batch",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "fixNumber": <fix_number>,
-  "baseReport": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
+  "baselineReportPath": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
   "violations": [ ... ]
 }
 ```
 
-The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session before running the workflow scripts, then sets `FIX_NUMBER` from the JSON payload.
+`agentLogFile` is the operational conversation log for the
+`dottest-fix-violation` agent. The agent must append its decisions, MCP results,
+commands, verification output, retries, and final result to this file. Do not
+use it as a `Tee-Object` target when running `verify.ps1` or
+`dottest-analyze.ps1`; those scripts manage their own output files. Hidden model
+reasoning is not available to the skill and is not included.
+
+The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session before running the workflow scripts.
 
 #### Collecting Results
 
 Parse the `FIX_RESULT=` JSON line from the agent's output. Update counters:
 
-- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed` and increment `$fix_number` by `1`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES`, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
-- If `status` is `"FAILURE"`: record the failure, increment `$fix_number` by `1`, and move on to the next violation.
+- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES`, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
+- If `status` is `"FAILURE"`: record the failure and move on to the next violation.
 
 #### Processing Order
 

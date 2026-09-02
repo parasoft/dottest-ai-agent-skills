@@ -10,8 +10,8 @@
 #   - Sets DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE env vars for subsequent steps
 #
 # SCENARIO 2: Baseline files provided (both DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE set)
-#   a) Initial verification (Step 2, no FIX_NUMBER): Only builds the solution with dotnet/devenv
-#   b) Fix verification (Step 7, has FIX_NUMBER): Runs tests with TIA using baseline
+#   a) Initial verification (Step 2, DOTTEST_FIX_MODE is false): Only builds the solution
+#   b) Fix verification (DOTTEST_FIX_MODE is true): Runs tests with TIA using baseline
 #
 # SCENARIO 3: DISABLE_UNIT_TEST_VERIFICATION is set to "true"
 #   - Always only builds the solution with dotnet/devenv/msbuild, never runs tests
@@ -23,7 +23,7 @@
 #   DOTTEST_BASE_UNIT_TEST_REPORT      – Baseline report.xml for TIA (may be empty)
 #   DOTTEST_BASE_UNIT_TEST_COVERAGE    – Baseline coverage.xml for TIA (may be empty)
 #   OUTPUT_DIR                         – Absolute path to the directory where output will be stored (may be empty)
-#   FIX_NUMBER                         – Set during fix verification (Step 7), empty during initial verification (Step 2)
+#   DOTTEST_FIX_MODE                  – Set to true during fix verification
 #   DISABLE_UNIT_TEST_VERIFICATION     – Set to "true" to skip all unit test execution (defaults to "false")
 #   DISABLE_INITIAL_BUILD              – Set to "true" to skip initial build verification (defaults to "false")
 #
@@ -46,9 +46,8 @@ $env:DOTTEST_BUILD_PERFORMED = "false"
 # Determine verification mode
 # ---------------------------------------------------------------------------
 $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST_VERIFICATION -eq "true")
-$hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and `
-               ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
-$isFixVerification = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
+$hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
+$isFixVerification = ($env:DOTTEST_FIX_MODE -and $env:DOTTEST_FIX_MODE -eq "true")
 
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 
@@ -124,7 +123,7 @@ if ($buildOnlyMode) {
     if ($hasBaseline) {
         # SCENARIO 2b: Baseline provided + fix verification - run tests with TIA
         Write-Output "[verify] Running tests with TIA using baseline files..."
-        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\unit-tests"
+        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\unit-tests"
     } else {
         # SCENARIO 1: No baseline - create baseline by running tests with coverage
         Write-Output "[verify] No baseline files provided. Running tests with coverage to create baseline..."

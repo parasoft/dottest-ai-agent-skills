@@ -435,7 +435,7 @@ Limit the scope of each agent session. Processing all violations in one run make
 
 ### Verify test coverage is maintained
 
-After merging a batch of fixes, check that code coverage has not dropped. Unit test reports for each fix are stored in `OUTPUT_DIR\parasoft-dottest-reports\fix-N\unit-tests\` and include coverage data when TIA is enabled.
+After merging a batch of fixes, check that code coverage has not dropped. Fix verification unit-test reports are stored in `OUTPUT_DIR\parasoft-dottest-reports\unit-tests\` and include coverage data when TIA is enabled.
 
 ### Keep the baseline report up to date
 
@@ -580,4 +580,3 @@ For **nightly full-project scans**, schedule the workflow on a cron trigger and 
 6. Enabling automatic commit mode.
 
 Start there for a hands-on introduction before applying the skill to your own project.
-
