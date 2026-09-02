@@ -162,35 +162,19 @@ the required build.
 
 **Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
-**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, use that file directly and do not copy it into `OUTPUT_DIR`. Otherwise, delegate baseline analysis to `dottest-fix-violation` in `baseline` mode. Before that invocation, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
-
-Use this baseline payload and embed it directly in the subagent prompt; do not
-write it to disk:
-
-```json
-{
-  "mode": "baseline",
-  "scriptDir": "<absolute path to the scripts directory of this skill>",
-  "agentLogFile": "<agentLogFile>",
-  "scopeInclude": "<DOTTEST_INCLUDE>",
-  "scopeExclude": "<DOTTEST_EXCLUDE>"
-}
-```
-
-The baseline agent must run `resolve-config.ps1` and then
-`dottest-analyze.ps1` in its own terminal session. Parse its final
-`BASELINE_RESULT=` line and set `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` to the
-returned `reportXml` path. Do not run baseline analysis in the parent context.
+**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, use that file directly and do not copy it into `OUTPUT_DIR`. Otherwise, run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`. Before invoking it, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
 
 The baseline analysis must complete before any `dottest-fix-violation` agent is
-spawned. A fix agent must never create or reuse a new baseline; it must use the
-baseline report produced by this step as its reference report.
+spawned. A fix agent never creates a baseline; it receives the selected baseline
+path in its JSON payload and uses it as its reference report.
 
-When a baseline path was provided, no analysis command is needed in the parent
-context. The baseline path is already the value of
+When a baseline path was provided, do not invoke the analysis script in Step 3;
+the provided path is already the value of
 `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`.
 
-The script **must** exit with code `0` on success and a non-zero code on failure, and always prints `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
+When the baseline is generated, the script **must** exit with code `0` on
+success and a non-zero code on failure, and must print
+`REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
 
 **After successful completion of this step, the baseline report file path must be stored in `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` for use in Step 4.**

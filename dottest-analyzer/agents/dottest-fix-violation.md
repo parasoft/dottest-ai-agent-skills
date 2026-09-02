@@ -1,8 +1,8 @@
 ---
 name: dottest-fix-violation
 description: >
-  Agent that runs baseline analysis or fixes and verifies dotTEST static
-  analysis violations in its own isolated context.
+  Agent that fixes and verifies dotTEST static analysis violations in its own
+  isolated context.
 ---
 
 # dotTEST Fix Violation Agent
@@ -12,18 +12,6 @@ You are an autonomous agent that fixes exactly one dotTEST static analysis viola
 ## Input
 
 The parent agent invokes you with a prompt containing a **JSON payload embedded directly in the prompt text**. Parse that JSON block to obtain your work item.
-
-For baseline mode, the payload is:
-
-```json
-{
-  "mode": "baseline",
-  "scriptDir": "C:\\skills\\dottest-analyzer\\scripts",
-  "agentLogFile": "C:\\MySolution\\parasoft-output\\parasoft-dottest-reports\\agent.log",
-  "scopeInclude": "",
-  "scopeExclude": ""
-}
-```
 
 If the prompt does not contain a parseable JSON block, this is an immediate **FAILURE** — stop and report it; do not guess values or invent a work item.
 
@@ -140,7 +128,7 @@ invented or logged.
 **Parse the JSON block embedded in your prompt and print its full contents to your output before doing anything else.** If the prompt does not contain a parseable JSON block, stop immediately and report a **FAILURE** — do not proceed with default or guessed values.
 
 Extract and set:
-- `mode` (`baseline`, `single`, or `batch`)
+- `mode` (`single` or `batch`)
 - `scriptDir` → store for use in script calls
 - `agentLogFile` → use as the agent runtime's transcript log path. Set
   `$env:AGENT_LOG_FILE` in the terminal session if the agent host uses that
@@ -148,17 +136,6 @@ Extract and set:
 - For `single` and `batch`, `baselineReportPath` is the exact baseline report
   selected by the parent agent.
 - Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`
-
-If `mode` is `baseline`, run `resolve-config.ps1` in the same terminal session,
-set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` from the payload, and run only
-`dottest-analyze.ps1`. Do not run `verify.ps1` or modify source files. Parse
-the final `REPORT_XML=` line and print exactly one final line:
-
-```text
-BASELINE_RESULT={"status":"SUCCESS","reportXml":"<absolute report path>"}
-```
-
-If baseline analysis fails, print `BASELINE_RESULT={"status":"FAILURE","error":"<description>"}` and stop. Do not execute the fix workflow for baseline mode.
 
 Run `resolve-config.ps1` once in the same terminal session. Do not construct or
 copy configuration from the parent. The resolver is the sole source of
