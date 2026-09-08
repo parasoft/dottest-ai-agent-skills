@@ -128,7 +128,10 @@ if ($env:DOTTEST_SETTINGS -and $env:DOTTEST_SETTINGS -ne "") {
 }
 
 # ---- DOTTEST_BASE_STATIC_ANALYSIS_REPORT ------------------------------------------------------
-if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "") {
+$resolvedStaticBaseline = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis\report.xml"
+if (Test-Path -LiteralPath $resolvedStaticBaseline -PathType Leaf) {
+    $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $resolvedStaticBaseline
+} elseif ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "") {
     if (-not (Test-Path $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
         Die "DOTTEST_BASE_STATIC_ANALYSIS_REPORT points to a file that does not exist: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT). Verify the path and retry."
     }
@@ -137,7 +140,10 @@ if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALY
 }
 
 # ---- DOTTEST_BASE_UNIT_TEST_REPORT ------------------------------------------------------
-if ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") {
+$resolvedUnitTestReport = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests\report.xml"
+if (Test-Path -LiteralPath $resolvedUnitTestReport -PathType Leaf) {
+    $env:DOTTEST_BASE_UNIT_TEST_REPORT = $resolvedUnitTestReport
+} elseif ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") {
     if (-not (Test-Path $env:DOTTEST_BASE_UNIT_TEST_REPORT -PathType Leaf)) {
         Die "DOTTEST_BASE_UNIT_TEST_REPORT points to a file that does not exist: $($env:DOTTEST_BASE_UNIT_TEST_REPORT). Verify the path and retry."
     }
@@ -146,7 +152,10 @@ if ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -
 }
 
 # ---- DOTTEST_BASE_UNIT_TEST_COVERAGE ----------------------------------------------------
-if ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "") {
+$resolvedUnitTestCoverage = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests\coverage.xml"
+if (Test-Path -LiteralPath $resolvedUnitTestCoverage -PathType Leaf) {
+    $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $resolvedUnitTestCoverage
+} elseif ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "") {
     if (-not (Test-Path $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -PathType Leaf)) {
         Die "DOTTEST_BASE_UNIT_TEST_COVERAGE points to a file that does not exist: $($env:DOTTEST_BASE_UNIT_TEST_COVERAGE). Verify the path and retry."
     }

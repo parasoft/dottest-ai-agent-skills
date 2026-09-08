@@ -62,6 +62,8 @@ Example JSON payload, by mode:
 
 ## Critical Constraints
 
+**Keep strictly to the plan in this agent definition.** Follow all Steps and instructions within. Do NOT start any analysis unless it is run by the powershell script provided in this skill.
+
 **Always EXECUTE scripts by running them in a terminal shell. NEVER read, open, or inspect a script file as a substitute for executing it.**
 
 **DO NOT create, modify, or delete any files other than the C# (or VB) source files strictly required to fix the violation and the designated `agentLogFile`.** No summary files, markdown reports, tracking documents, or other auxiliary files.
@@ -130,11 +132,8 @@ invented or logged.
 Extract and set:
 - `mode` (`single` or `batch`)
 - `scriptDir` → store for use in script calls
-- `agentLogFile` → use as the agent runtime's transcript log path. Set
-  `$env:AGENT_LOG_FILE` in the terminal session if the agent host uses that
-  variable for transcript logging.
-- For `single` and `batch`, `baselineReportPath` is the exact baseline report
-  selected by the parent agent.
+- `agentLogFile` → use as the agent runtime's transcript log path. Set `$env:AGENT_LOG_FILE` in the terminal session if the agent host uses that variable for transcript logging.
+- `baselineReportPath` is the exact baseline report selected by the parent agent.
 - Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`
 
 Run `resolve-config.ps1` once in the same terminal session. Do not construct or
@@ -148,23 +147,14 @@ environment variable for debugging (including variables whose value is empty):
 `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`,
 `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`,
 `DOTTEST_BUILDER`, `DISABLE_INITIAL_BUILD`, `DISABLE_UNIT_TEST_VERIFICATION`,
-`DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`, `DOTTEST_FIX_MODE`, and
-`DOTTEST_FIXED_FILES`. Log the same values through `Write-AgentLog`, excluding
+`DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`, and `DOTTEST_FIXED_FILES`.
+Log the same values through `Write-AgentLog`, excluding
 secrets.
 
 For `single` and `batch` modes, use the baseline report path supplied in the
-payload. The parent has already selected either the configured baseline or the
-report created by the delegated baseline run. Do not search for another report
-and do not copy this report:
-
-```powershell
-$env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = [IO.Path]::GetFullPath($workItem.baselineReportPath)
-if (-not (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
-  throw "Baseline static-analysis report was not found: $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT"
-}
-$env:DOTTEST_FIX_MODE = "true"
-```
-
+payload. The parent has already created or copied the baseline into the
+canonical output location. Do not search for another report and do not copy
+this report:
 
 ### Step 2: Get Rule Documentation
 
@@ -186,17 +176,13 @@ Apply the change using the edit tool. Do not rewrite the entire file.
 ### Step 5: Verify — Build and Tests
 
 **If `disableUnitTestVerification` is `true`, skip this step entirely and proceed to Step 6.**
-Before running verification, set `$env:DOTTEST_FIX_MODE = "true"` and keep it
-set for the remainder of this invocation. This ensures verification uses fix
-mode even when unit-test baselines are configured.
-After applying the fix, set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated
-absolute paths of all changed source files before running verification. Keep
-both variables set for the analysis step.
+Before running verification, keep `$env:DOTTEST_BASELINE_MODE = "false"` set for the remainder of this invocation. This ensures verification uses fix mode even when unit-test baselines are configured. If this variable is not set to `false`, the scripts safely remain in baseline mode and refuse to treat the run as fix verification.
+
+**CRITICAL:** After applying the fix, set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated absolute paths of all changed source files before running verification. Keep both variables set for the analysis step.
+
 Run the script directly: `& "<scriptDir>\verify.ps1"`
 
-Do not pipe or tee script output into `AGENT_LOG_FILE`. Log the captured command
-output explicitly with `Write-AgentLog`; the verification script manages its own
-output files.
+Do not pipe or tee script output into `AGENT_LOG_FILE`. Log the captured command output explicitly with `Write-AgentLog`; the verification script manages its own output files.
 
 If the script fails (non-zero exit code): this is a **FAILURE**.
 
@@ -204,8 +190,7 @@ Parse the `REPORT_XML=` value from the last stdout line. Check that there are no
 
 ### Step 6: Verify — dotTEST Static Analysis
 
-For each source file modified by the fix, use its full absolute path. **Set the following environment variable before calling the script**:
-DOTTEST_FIXED_FILES = "<semicolon-separated absolute paths of all changed files>"
+**CRITICAL:** Set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated absolute paths of all source files changed by the fix. Keep variables for the analysis step.
 
 Run the script directly: `& "<scriptDir>\dottest-analyze.ps1"`
 

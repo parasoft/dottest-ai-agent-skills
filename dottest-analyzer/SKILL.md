@@ -81,11 +81,11 @@ All settings are read exclusively from environment variables. No interactive pro
 
 All configuration loading, parsing, validation, and dotTEST installation verification is performed by the **`resolve-config.ps1`** script located in `scripts` directory.
 
-During processing of this skill invoke the `resolve-config.ps1` script **ONCE**. Do NOT rerun this script once it has been correctly executed. **DO NOT set any environmental variable** unless it is already set up. The script will set all required environment variables. If any required variable is missing or invalid, the script prints a descriptive error message and exits with a non-zero code. If the script exits with an error, print `ERROR: Configuration error - [error message from script]` and terminate skill immediately with non-zero exit code.
+During processing of this skill invoke the `resolve-config.ps1` script **ONCE**. Do NOT rerun this script once it has been correctly executed. **DO NOT set any environmental variable** unless it is already set up. The script will set all required environment variables. If any required variable is missing or invalid, the script prints a descriptive error message and exits with a non-zero code. If the script exits with an error, print `ERROR: Configuration error - [error message from script]` and terminate skill immediately with non-zero exit code. **After the script returns, verify that the current environment actually matches what it printed: for every `Resolved configuration` line whose value is not `(not set)`, confirm `$env:<VARIABLE>` equals the exact printed value; skip verification for any variable printed as `(not set)`. If a mismatch is found, do not terminate — set `$env:<VARIABLE>` to the printed value so the environment matches the script's resolved configuration before proceeding.**
 
 **For all subsequent steps**, keep the environment consistent with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified unless specified.
 
-After successful return, the following environment variables are guaranteed to be set and available to all subsequent steps: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_COMMIT_FIXES`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_FILTER_RULE`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DOTTEST_STATIC_NO_OF_MAX_FIXES`, `FIXES_BRANCH_NAME`, `DOTTEST_FIX_ATTEMPTS`, `DOTTEST_REFERENCE_BRANCH`, `DOTTEST_BUILDER`, `GIT_BRANCH`, `GIT_WORKSPACE`. **The script writes all those settings to the console. Each one of them should be set if not already provided, unless printed value by the script is `(not set)` - in that case the variable is not set and should be treated as empty string.**
+After successful return, the following environment variables are guaranteed to be set and available to all subsequent steps: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_COMMIT_FIXES`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_FILTER_RULE`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DOTTEST_STATIC_NO_OF_MAX_FIXES`, `FIXES_BRANCH_NAME`, `DOTTEST_FIX_ATTEMPTS`, `DOTTEST_REFERENCE_BRANCH`, `DOTTEST_BUILDER`, `GIT_BRANCH`, `GIT_WORKSPACE`. **The script writes all those settings to the console. Each one of them should be set if not already provided, unless printed value by the script is `(not set)` - in that case the variable is not set and should be treated as empty string.** The analysis and verification scripts then prefer baseline copies under `OUTPUT_DIR\parasoft-dottest-reports\baseline` and update these variables to the copied paths.
 
 **After calling the script**, set the `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` environment variables based on the user's request (see [Analysis Scope](#resolve-analysis-scope) below). 
 
@@ -152,29 +152,18 @@ The script **must** exit with code `0` on success and a non-zero code on failure
 **If `verify` executed unit tests, parse the `REPORT_XML=` value from the last stdout line. If tests were expected but no `REPORT_XML=` line was emitted: FAILURE. If `verify` ran in build-only mode, do not require `REPORT_XML` in Step 2.**
 If unit tests were executed, check that there are no unit test failures in the `REPORT_XML` file. If there are any then print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately.
 
-After verification, preserve its `DOTTEST_BUILD_PERFORMED` process marker. If
-verification built the solution directly or through `dottestcli`,
-`dottest-analyze.ps1` adds `-nobuild`. If verification was skipped because
-`DISABLE_INITIAL_BUILD=true`, the marker remains `false` and analysis performs
-the required build.
-
 ### Step 3: Run dotTEST Analysis
 
 **Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
-**If user has provided a baseline static analysis report file via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, use that file directly and do not copy it into `OUTPUT_DIR`. Otherwise, run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`. Before invoking it, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
+Run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`.
+Before invoking it, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
 
-The baseline analysis must complete before any `dottest-fix-violation` agent is
-spawned. A fix agent never creates a baseline; it receives the selected baseline
-path in its JSON payload and uses it as its reference report.
+Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script defaults to baseline mode when this variable is missing, but the skill sets it explicitly for debugging and safety.
 
-When a baseline path was provided, do not invoke the analysis script in Step 3;
-the provided path is already the value of
-`DOTTEST_BASE_STATIC_ANALYSIS_REPORT`.
+The baseline analysis must complete before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected baseline path in its JSON payload and uses it as its reference report.
 
-When the baseline is generated, the script **must** exit with code `0` on
-success and a non-zero code on failure, and must print
-`REPORT_XML=<absolute_path>` as its **last stdout line** on success.
+When the baseline is generated, the script **must** exit with code `0` on success and a non-zero code on failure, and must print `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
 
 **After successful completion of this step, the baseline report file path must be stored in `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` for use in Step 4.**
@@ -200,6 +189,8 @@ Process violations in the following deterministic order:
 4. Process violations in this sorted order, one at a time.
 
 ### Step 6: Fix, Verify, and Commit — Delegate to `dottest-fix-violation` Agent
+
+If `DOTTEST_BASELINE_MODE` is set to `true` make sure to **unset it or set to `false`** before spawning the `dottest-fix-violation` agent. The fix agent must run in normal mode, not baseline mode.
 
 Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
 
@@ -266,12 +257,7 @@ The payload **must include all context** the agent needs (it runs in its own iso
 }
 ```
 
-`agentLogFile` is the operational conversation log for the
-`dottest-fix-violation` agent. The agent must append its decisions, MCP results,
-commands, verification output, retries, and final result to this file. Do not
-use it as a `Tee-Object` target when running `verify.ps1` or
-`dottest-analyze.ps1`; those scripts manage their own output files. Hidden model
-reasoning is not available to the skill and is not included.
+`agentLogFile` is the operational conversation log for the `dottest-fix-violation` agent. The agent must append its decisions, MCP results, commands, verification output, retries, and final result to this file. Do not use it as a `Tee-Object` target when running `verify.ps1` or `dottest-analyze.ps1`; those scripts manage their own output files. Hidden model reasoning is not available to the skill and is not included.
 
 The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session before running the workflow scripts.
 

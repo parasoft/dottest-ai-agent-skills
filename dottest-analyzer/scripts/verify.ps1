@@ -10,8 +10,8 @@
 #   - Sets DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE env vars for subsequent steps
 #
 # SCENARIO 2: Baseline files provided (both DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE set)
-#   a) Initial verification (Step 2, DOTTEST_FIX_MODE is false): Only builds the solution
-#   b) Fix verification (DOTTEST_FIX_MODE is true): Runs tests with TIA using baseline
+#   a) Initial verification (Step 2, DOTTEST_BASELINE_MODE is true): Only builds the solution
+#   b) Fix verification (DOTTEST_BASELINE_MODE is false): Runs tests with TIA using baseline
 #
 # SCENARIO 3: DISABLE_UNIT_TEST_VERIFICATION is set to "true"
 #   - Always only builds the solution with dotnet/devenv/msbuild, never runs tests
@@ -23,7 +23,7 @@
 #   DOTTEST_BASE_UNIT_TEST_REPORT      – Baseline report.xml for TIA (may be empty)
 #   DOTTEST_BASE_UNIT_TEST_COVERAGE    – Baseline coverage.xml for TIA (may be empty)
 #   OUTPUT_DIR                         – Absolute path to the directory where output will be stored (may be empty)
-#   DOTTEST_FIX_MODE                  – Set to true during fix verification
+#   DOTTEST_BASELINE_MODE             – Set to true for baseline verification; false for fix verification
 #   DISABLE_UNIT_TEST_VERIFICATION     – Set to "true" to skip all unit test execution (defaults to "false")
 #   DISABLE_INITIAL_BUILD              – Set to "true" to skip initial build verification (defaults to "false")
 #
@@ -40,14 +40,45 @@ Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 Set-Location -Path $env:OUTPUT_DIR
 # This marker is consumed by dottest-analyze.ps1 in the same workflow. Reset it
 # for every verification so a previous step cannot suppress a required build.
-$env:DOTTEST_BUILD_PERFORMED = "false"
+
+# Baseline copies in OUTPUT_DIR are authoritative. If a copy is absent, copy
+# the configured baseline into the canonical location and use that copy.
+$baselineUnitDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
+$baselineUnitReport = Join-Path $baselineUnitDir "report.xml"
+$baselineUnitCoverage = Join-Path $baselineUnitDir "coverage.xml"
+New-Item -ItemType Directory -Path $baselineUnitDir -Force | Out-Null
+
+if (Test-Path -LiteralPath $baselineUnitReport -PathType Leaf) {
+    $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineUnitReport
+} elseif ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and
+          (Test-Path -LiteralPath $env:DOTTEST_BASE_UNIT_TEST_REPORT -PathType Leaf)) {
+    $configuredReport = [IO.Path]::GetFullPath($env:DOTTEST_BASE_UNIT_TEST_REPORT)
+    if ($configuredReport -ne [IO.Path]::GetFullPath($baselineUnitReport)) {
+        Copy-Item -LiteralPath $configuredReport -Destination $baselineUnitReport -Force
+    }
+    $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineUnitReport
+    Write-Output "[verify] Copied configured unit-test report to: $baselineUnitReport"
+}
+
+if (Test-Path -LiteralPath $baselineUnitCoverage -PathType Leaf) {
+    $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineUnitCoverage
+} elseif ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and
+          (Test-Path -LiteralPath $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -PathType Leaf)) {
+    $configuredCoverage = [IO.Path]::GetFullPath($env:DOTTEST_BASE_UNIT_TEST_COVERAGE)
+    if ($configuredCoverage -ne [IO.Path]::GetFullPath($baselineUnitCoverage)) {
+        Copy-Item -LiteralPath $configuredCoverage -Destination $baselineUnitCoverage -Force
+    }
+    $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineUnitCoverage
+    Write-Output "[verify] Copied configured unit-test coverage to: $baselineUnitCoverage"
+}
 
 # ---------------------------------------------------------------------------
 # Determine verification mode
 # ---------------------------------------------------------------------------
 $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST_VERIFICATION -eq "true")
 $hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
-$isFixVerification = ($env:DOTTEST_FIX_MODE -and $env:DOTTEST_FIX_MODE -eq "true")
+$isBaselineMode = (-not ($env:DOTTEST_BASELINE_MODE -and $env:DOTTEST_BASELINE_MODE -eq "false"))
+$isFixVerification = -not $isBaselineMode
 
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 
@@ -113,7 +144,6 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
     
-    $env:DOTTEST_BUILD_PERFORMED = "true"
     Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Build completed successfully."
     exit 0
@@ -127,7 +157,7 @@ if ($buildOnlyMode) {
     } else {
         # SCENARIO 1: No baseline - create baseline by running tests with coverage
         Write-Output "[verify] No baseline files provided. Running tests with coverage to create baseline..."
-        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
+        $reportDir = $baselineUnitDir
     }
 
     if (-not (Test-Path -Path $reportDir)) {
@@ -194,7 +224,6 @@ if ($buildOnlyMode) {
     }
 
     # Running dotTEST for tests also performs the solution build.
-    $env:DOTTEST_BUILD_PERFORMED = "true"
     Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Tests completed successfully."
         $reportXml = Join-Path $reportDir "report.xml"
