@@ -67,20 +67,6 @@ if ($isFixRun -and -not $hasFixedFiles) {
     exit 1
 }
 
-# The output copy is authoritative. If it does not exist, copy a configured
-# baseline into it before any analysis or comparison is performed.
-if (Test-Path -LiteralPath $baselineReportPath -PathType Leaf) {
-    $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $baselineReportPath
-} elseif ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
-    New-Item -ItemType Directory -Path $baselineReportDir -Force | Out-Null
-    $configuredBaseline = [IO.Path]::GetFullPath($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)
-    if ($configuredBaseline -ne [IO.Path]::GetFullPath($baselineReportPath)) {
-        Copy-Item -LiteralPath $configuredBaseline -Destination $baselineReportPath -Force
-        Write-Output "[dottest-analyze] Copied configured baseline to: $baselineReportPath"
-    }
-    $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $baselineReportPath
-}
-
 if ($isBaselineRun -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT) {
     Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
     Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."

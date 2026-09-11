@@ -2,7 +2,11 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ExpectedJson
+    [string]$ExpectedJson,
+
+    # In verification-only mode do not modify the process environment. This
+    # lets the caller detect drift before deciding whether to restore it.
+    [switch]$VerifyOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,11 +24,14 @@ if (-not $expected -or $properties.Count -eq 0) {
     exit 1
 }
 
-# Restore every value through the process environment API. This is deliberate:
-# it updates the environment inherited by all subsequently launched scripts.
-foreach ($property in $properties) {
-    $expectedValue = if ($null -eq $property.Value) { "" } else { [string]$property.Value }
-    [Environment]::SetEnvironmentVariable($property.Name, $expectedValue, [EnvironmentVariableTarget]::Process)
+# The normal mode is used by fix agents to restore the supplied snapshot.
+# Verification-only mode intentionally skips this block so drift remains
+# observable to the caller.
+if (-not $VerifyOnly) {
+    foreach ($property in $properties) {
+        $expectedValue = if ($null -eq $property.Value) { "" } else { [string]$property.Value }
+        [Environment]::SetEnvironmentVariable($property.Name, $expectedValue, [EnvironmentVariableTarget]::Process)
+    }
 }
 
 $mismatches = [System.Collections.Generic.List[string]]::new()
@@ -39,9 +46,14 @@ foreach ($property in $properties) {
 }
 
 if ($mismatches.Count -gt 0) {
-    Write-Error "ERROR: Restored environment does not match the JSON snapshot."
+    $message = if ($VerifyOnly) {
+        "ERROR: Current environment does not match the resolved configuration."
+    } else {
+        "ERROR: Restored environment does not match the JSON snapshot."
+    }
+    Write-Error $message
     $mismatches | ForEach-Object { Write-Error $_ }
-    exit 1
+    if ($VerifyOnly) { exit 1 }
 }
 
 Write-Output "ENVIRONMENT_VERIFIED=$($properties.Count)"

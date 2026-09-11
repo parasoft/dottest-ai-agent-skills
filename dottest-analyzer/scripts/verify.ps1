@@ -38,43 +38,10 @@ Write-Output "[verify] SOLUTION_PATH = $env:SOLUTION_PATH"
 Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 Set-Location -Path $env:OUTPUT_DIR
+
 if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
     Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
     exit 1
-}
-
-# This marker is consumed by dottest-analyze.ps1 in the same workflow. Reset it
-# for every verification so a previous step cannot suppress a required build.
-
-# Baseline copies in OUTPUT_DIR are authoritative. If a copy is absent, copy
-# the configured baseline into the canonical location and use that copy.
-$baselineUnitDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
-$baselineUnitReport = Join-Path $baselineUnitDir "report.xml"
-$baselineUnitCoverage = Join-Path $baselineUnitDir "coverage.xml"
-New-Item -ItemType Directory -Path $baselineUnitDir -Force | Out-Null
-
-if (Test-Path -LiteralPath $baselineUnitReport -PathType Leaf) {
-    $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineUnitReport
-} elseif ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and
-          (Test-Path -LiteralPath $env:DOTTEST_BASE_UNIT_TEST_REPORT -PathType Leaf)) {
-    $configuredReport = [IO.Path]::GetFullPath($env:DOTTEST_BASE_UNIT_TEST_REPORT)
-    if ($configuredReport -ne [IO.Path]::GetFullPath($baselineUnitReport)) {
-        Copy-Item -LiteralPath $configuredReport -Destination $baselineUnitReport -Force
-    }
-    $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineUnitReport
-    Write-Output "[verify] Copied configured unit-test report to: $baselineUnitReport"
-}
-
-if (Test-Path -LiteralPath $baselineUnitCoverage -PathType Leaf) {
-    $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineUnitCoverage
-} elseif ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and
-          (Test-Path -LiteralPath $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -PathType Leaf)) {
-    $configuredCoverage = [IO.Path]::GetFullPath($env:DOTTEST_BASE_UNIT_TEST_COVERAGE)
-    if ($configuredCoverage -ne [IO.Path]::GetFullPath($baselineUnitCoverage)) {
-        Copy-Item -LiteralPath $configuredCoverage -Destination $baselineUnitCoverage -Force
-    }
-    $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineUnitCoverage
-    Write-Output "[verify] Copied configured unit-test coverage to: $baselineUnitCoverage"
 }
 
 # ---------------------------------------------------------------------------
@@ -166,7 +133,7 @@ if ($buildOnlyMode) {
     } else {
         # SCENARIO 1: No baseline - create baseline by running tests with coverage
         Write-Output "[verify] No baseline files provided. Running tests with coverage to create baseline..."
-        $reportDir = $baselineUnitDir
+        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
     }
 
     if (-not (Test-Path -Path $reportDir)) {
