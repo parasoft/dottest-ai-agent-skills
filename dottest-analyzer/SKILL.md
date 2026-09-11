@@ -219,13 +219,6 @@ If `FIXES_BRANCH_NAME` is empty or `DOTTEST_COMMIT_FIXES` is not `true`, commit 
 
 #### Invoking the Agent
 
-Before spawning each agent, create the log directory in the terminal session:
-
-```powershell
-$agentLogFile = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\agent.log"
-New-Item -ItemType Directory -Path (Split-Path $agentLogFile) -Force | Out-Null
-```
-
 For each violation or batch, populate one of the JSON payloads below and embed it directly in the subagent's prompt text. Do not write the payload to disk.
 
 The payload **must include all context** the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
@@ -268,7 +261,6 @@ The `environment` object must be identical in the single and batch payloads. Do 
 {
   "mode": "single",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
-  "agentLogFile": "<agentLogFile>",
   "environment": { "...": "the complete environment object above" },
   "violation": {
     "ruleId": "<rule_id>",
@@ -285,13 +277,10 @@ The `environment` object must be identical in the single and batch payloads. Do 
 {
   "mode": "batch",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
-  "agentLogFile": "<agentLogFile>",
   "environment": { "...": "the complete environment object above" },
   "violations": [ ... ]
 }
 ```
-
-`agentLogFile` is the operational conversation log for the `dottest-fix-violation` agent. The agent must append its decisions, MCP results, commands, verification output, retries, and final result to this file. Do not use it as a `Tee-Object` target when running `verify.ps1` or `dottest-analyze.ps1`; those scripts manage their own output files. Hidden model reasoning is not available to the skill and is not included.
 
 The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session, restores the complete `environment` object using `verify-environment.ps1`, and must stop on a verification failure before running `verify.ps1` or `dottest-analyze.ps1`.
 

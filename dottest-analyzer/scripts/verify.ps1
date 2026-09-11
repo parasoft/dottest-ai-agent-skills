@@ -209,15 +209,11 @@ if ($buildOnlyMode) {
 
     Write-Output "[verify] Running: $dottestExe $($argList -join ' ')"
 
-    # Preserve any previous dottestcli output instead of overwriting it
-    $dottestCliOutputPath = Join-Path $reportDir "dottestcli_output.txt"
-    if (Test-Path -LiteralPath $dottestCliOutputPath) {
-        $archiveIndex = 1
-        while (Test-Path -LiteralPath (Join-Path $reportDir "dottestcli_output ($archiveIndex).txt")) {
-            $archiveIndex++
-        }
-        Rename-Item -LiteralPath $dottestCliOutputPath -NewName "dottestcli_output ($archiveIndex).txt"
-    }
+    # Use a unique capture file for every invocation. A previous dotTEST
+    # process may still have its capture file open, so archiving it with
+    # Rename-Item (or overwriting it with redirection) is not safe.
+    $captureId = "{0:yyyyMMdd-HHmmssfff}" -f (Get-Date)
+    $dottestCliOutputPath = Join-Path $reportDir "dottestcli_output-$captureId.txt"
 
     $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
     & $dottestExe @argList > $dottestCliOutputPath
