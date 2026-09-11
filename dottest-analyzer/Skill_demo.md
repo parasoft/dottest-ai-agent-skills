@@ -169,8 +169,15 @@ git status --short
 git diff
 ```
 
-The skill outputs reports to `OUTPUT_DIR\parasoft-dottest-reports\`. The baseline static analysis
-report is at `baseline\sa\report.xml`; fix-verification reports are at `fix-N\sa\report.xml`.
+The skill outputs reports to `OUTPUT_DIR\parasoft-dottest-reports\`. Static-
+analysis baselines are stored in `baseline\static-analysis\report.xml`, unit-
+test baselines in `baseline\unit-tests\report.xml` and
+`baseline\unit-tests\coverage.xml`, and fix-verification reports in the
+corresponding `static-analysis\` and `unit-tests\` directories. `verify.ps1`
+emits `UT_REPORT_XML=<absolute path>`; `dottest-analyze.ps1` emits
+`SA_REPORT_XML=<absolute path>`. Configured baselines are copied into the
+canonical baseline locations and prevent new baseline creation. Existing
+output files alone do not select a baseline.
 
 ## Step 8: Optional automatic commit mode
 
