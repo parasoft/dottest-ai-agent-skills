@@ -85,9 +85,11 @@ During processing of this skill invoke the `resolve-config.ps1` script **ONCE**.
 
 **For all subsequent steps**, keep the environment consistent with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified unless specified.
 
-After successful return, the following environment variables are guaranteed to be set and available to all subsequent steps: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_COMMIT_FIXES`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_FILTER_RULE`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DOTTEST_STATIC_NO_OF_MAX_FIXES`, `FIXES_BRANCH_NAME`, `DOTTEST_FIX_ATTEMPTS`, `DOTTEST_REFERENCE_BRANCH`, `DOTTEST_BUILDER`, `GIT_BRANCH`, `GIT_WORKSPACE`. **The script writes all those settings to the console. Each one of them should be set if not already provided, unless printed value by the script is `(not set)` - in that case the variable is not set and should be treated as empty string.** The analysis and verification scripts then prefer baseline copies under `OUTPUT_DIR\parasoft-dottest-reports\baseline` and update these variables to the copied paths.
+After successful return, the following environment variables are guaranteed to be set and available to all subsequent steps: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`, `DOTTEST_COMMIT_FIXES`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_FILTER_RULE`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DOTTEST_STATIC_NO_OF_MAX_FIXES`, `FIXES_BRANCH_NAME`, `DOTTEST_FIX_ATTEMPTS`, `DOTTEST_REFERENCE_BRANCH`, `DOTTEST_BUILDER`, `GIT_BRANCH`, `GIT_WORKSPACE`. **The script writes all those settings to the console. Each one of them should be set if not already provided, unless printed value by the script is `(not set)` - in that case the variable is not set and should be treated as empty string.** Explicitly configured baseline files are copied into the canonical baseline locations by the analysis and verification scripts, which then update these three variables to the copied paths. Existing canonical baseline files from an earlier skill run are generated output and are not treated as input baselines; a new run regenerates them.
 
 **After calling the script**, set the `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` environment variables based on the user's request (see [Analysis Scope](#resolve-analysis-scope) below). 
+
+After scope resolution, set `DOTTEST_BASELINE_MODE=true` and create the complete `$environment` JSON object used later in subagent payloads. It must contain every variable listed in the Step 6 environment schema, including the three baseline variables, `DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE` (do NOT include `DOTTEST_BASELINE_MODE`). Represent `(not set)` as an empty string and `(current branch)` as the actual process value. Also record whether the static baseline was provided and whether both unit-test baseline files were provided at this point. Serialize the object with `ConvertTo-Json -Compress`; this is the single mutable environment object for Steps 2–6. Do not recreate it by calling `resolve-config.ps1` again.
 
 A fully annotated template config file is provided as `dottest-analyzer.config` in the same directory as this `SKILL.md`. Copy and customise it for each project.
 If a `DOTTEST_REFERENCE_BRANCH` variable is set, then determine the current git branch (set as `GIT_BRANCH`) and workspace (set as `GIT_WORKSPACE`), and verify that the target branch exists in the repository. If any of these steps fail, print an appropriate error message and terminate immediately.
@@ -128,7 +130,7 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
 
-**Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
+Immediately before invoking `verify.ps1`, invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This restores and verifies the exact current environment object, including its current baseline values. If it fails, terminate immediately; do not rerun `resolve-config.ps1`.
 
 **Verify the solution builds and unit tests pass.** The verification behavior depends on whether baseline files are provided and the `DISABLE_UNIT_TEST_VERIFICATION` setting:
 
@@ -151,12 +153,14 @@ The script **must** exit with code `0` on success and a non-zero code on failure
 
 **If the script fails (non-zero exit code)**: print `ERROR: Solution build or unit tests failed. Fix compilation errors or failing tests before running analysis.` followed by the script output, and terminate immediately.
 
-**If `verify` executed unit tests, parse the `REPORT_XML=` value from the last stdout line. If tests were expected but no `REPORT_XML=` line was emitted: FAILURE. If `verify` ran in build-only mode, do not require `REPORT_XML` in Step 2.**
-If unit tests were executed, check that there are no unit test failures in the `REPORT_XML` file. If there are any then print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately.
+**If `verify` executed unit tests, parse the `UT_REPORT_XML=` value from the last stdout line. If tests were expected but no `UT_REPORT_XML=` line was emitted: FAILURE. If `verify` ran in build-only mode, do not require `UT_REPORT_XML` in Step 2.**
+If unit tests were executed, check that there are no unit test failures in the `UT_REPORT_XML` file. If there are any then print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately.
+
+After `verify.ps1` completes successfully, update the `$environment` object and its JSON representation from the current process values. If both unit-test baseline variables were empty when the object was first created and `verify.ps1` generated baselines, update `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` to the paths emitted by `verify.ps1`. If unit-test baselines were present in the initial object, leave them unchanged and do not treat the existing canonical files as newly generated. The updated JSON is passed to Step 3 and later to subagents.
 
 ### Step 3: Run dotTEST Analysis
 
-**Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
+Immediately before invoking `dottest-analyze.ps1`, invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This must succeed before analysis starts. Do not rerun `resolve-config.ps1`.
 
 set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
 
@@ -164,14 +168,16 @@ Run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`.
 
 The baseline analysis must complete before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected baseline path in its JSON payload and uses it as its reference report.
 
-When the baseline is generated, the script **must** exit with code `0` on success and a non-zero code on failure, and must print `REPORT_XML=<absolute_path>` as its **last stdout line** on success.
+When the baseline is generated, the script **must** exit with code `0` on success and a non-zero code on failure, and must print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
 
 **After successful completion of this step, the baseline report file path must be stored in `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` for use in Step 4.**
 
+After `dottest-analyze.ps1` completes successfully, update `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` in the `$environment` object and its JSON representation from the final `SA_REPORT_XML=` path. If a static baseline was present in the initial object, this update records the copied/selected path only; it does not indicate that a new baseline was created. Pass this updated object to Step 6.
+
 ### Step 4: Collect Violations
 
-**If analysis was run in Step 3 parse the `REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1`. Store this absolute path in the `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` environment variable. Do not search for `report.xml` in any other location.**
+**If analysis was run in Step 3 parse the `SA_REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1`. Store this absolute path in the `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` environment variable. Do not search for `report.xml` in any other location.**
 
 Call the MCP tool `get_violations_from_report_file` with `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` to obtain a structured list of findings, then report a summary (total count, breakdown by severity).
 

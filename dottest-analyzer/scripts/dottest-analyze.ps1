@@ -22,7 +22,7 @@
 #   - Initial analysis: [solution_dir]\parasoft-dottest-reports\baseline\report.xml
 #   - Fix verification: [solution_dir]\parasoft-dottest-reports\static-analysis\report.xml
 #   
-#   Prints the absolute path on the LAST line as: REPORT_XML=<path>
+#   Prints the absolute path on the LAST line as: SA_REPORT_XML=<path>
 #
 # EXIT CODES:
 #   0 - Analysis completed successfully, report.xml created
@@ -71,7 +71,7 @@ if ($isBaselineRun -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT) {
     Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
     Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."
 
-    Write-Output "REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
+    Write-Output "SA_REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
     exit 0
 }
 
@@ -230,6 +230,6 @@ Write-Output "[dottest-analyze] Analysis completed successfully."
 # Construct and output the path to the generated report.xml
 # The skill will parse this line to locate the report for downstream processing
 $reportXml = Join-Path $reportDir "report.xml"
-Write-Output "REPORT_XML=$reportXml"
+Write-Output "SA_REPORT_XML=$reportXml"
 
 exit 0

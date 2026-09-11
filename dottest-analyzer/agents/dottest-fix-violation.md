@@ -162,7 +162,15 @@ Run the script directly: `& "<scriptDir>\verify.ps1"`
 
 If the script fails (non-zero exit code): this is a **FAILURE**.
 
-Parse the `REPORT_XML=` value from the last stdout line. Check that there are no new unit test failures in that report file. If new unit test failures are present: this is a **FAILURE**.
+Parse the `UT_REPORT_XML=` value from the last stdout line.
+
+**Normalize the build output into `build_output.log`:**
+- `verify.ps1` runs unit tests through `dottestcli.exe` when tests are actually executed; that run writes a combined build+test capture file named `dottestcli_output-<timestamp>.txt` in the same directory as `UT_REPORT_XML`. If such a file exists there, extract build output from the most recent one to `build_output.log` (overwrite if present) next to the other files.
+- If no `dottestcli_output-*.txt` file exists in that directory, `verify.ps1` ran in build-only mode (via `devenv`/`dotnet`/`msbuild` directly) and has already written `build_output.log` itself — do not overwrite it.
+
+Read the **last 20 lines** of `$env:OUTPUT_DIR\build_output.log` to confirm the build succeeded. If the build failed or the file is missing: this is a **FAILURE**.
+
+Only if the build succeeded, compare unit test results: check `UT_REPORT_XML` against the baseline report (`$env:DOTTEST_BASE_UNIT_TEST_REPORT`) and confirm no **new** unit test failures were introduced. If new unit test failures are present: this is a **FAILURE**.
 
 ### Step 6: Verify — dotTEST Static Analysis
 
@@ -185,13 +193,12 @@ Interpret exit codes:
 
 ### Step 7: Validate Results
 
-Parse the `REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1` in Step 6. If no `REPORT_XML=` line was emitted or the script exited non-zero: **FAILURE**.
+Parse the `SA_REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1` in Step 6. If no `SA_REPORT_XML=` line was emitted or the script exited non-zero: **FAILURE**.
 
 Additionally:
 - Use MCP tool `get_violations_from_report_file` on the generated report to confirm whether the specific violation(s) have been resolved.
 - If any **new** violations were introduced by the fix (determined by checking the `new="true"` attribute in the MCP tool result): this is a **FAILURE**.
-- In the same directory as `REPORT_XML`, check for `dottestcli_build.log`. Read the last 20 lines to verify the build succeeded. If the build failed: **FAILURE**.
-- Extract all setup problems from `REPORT_XML` (node: `SetupProblems/Problem`). If any new ones (compared to baseline) or any related to build/compilation are found: **FAILURE**.
+- Extract all setup problems from `SA_REPORT_XML` (node: `SetupProblems/Problem`). If any new ones (compared to baseline) or any related to build/compilation are found: **FAILURE**.
 - Check that at least ONE FILE has been analyzed. Otherwise: **FAILURE**.
 
 ### Step 8: Handle Failure or Commit

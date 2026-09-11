@@ -209,7 +209,7 @@ if ($buildOnlyMode) {
     Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Tests completed successfully."
         $reportXml = Join-Path $reportDir "report.xml"
-        Write-Output "REPORT_XML=$reportXml"
+        Write-Output "UT_REPORT_XML=$reportXml"
 
     exit 0
 }
