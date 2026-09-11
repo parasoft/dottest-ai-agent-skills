@@ -15,7 +15,7 @@
 #   DOTTEST_INCLUDE                        - Specific file path to analyze (empty = analyze all)
 #   DOTTEST_EXCLUDE                        - Specific file path to exclude from analysis (empty = analyze all)
 #   DOTTEST_BASE_STATIC_ANALYSIS_REPORT    - Path to baseline report.xml for fix verification (empty = initial analysis)
-#   DOTTEST_BASELINE_MODE                  - Set to true for baseline analysis; missing also defaults to baseline
+#   DOTTEST_BASELINE_MODE                  - Must be true for baseline or false for fix verification
 #
 # OUTPUT:
 #   Creates report.xml in one of two locations:
@@ -39,6 +39,11 @@ Write-Output "[dottest-analyze] DOTTEST_HOME  = $env:DOTTEST_HOME"
 # Change working directory to solution directory
 Set-Location -Path $env:OUTPUT_DIR
 
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+
 # =============================================================================
 # STEP 1: Determine report output directory
 # =============================================================================
@@ -51,10 +56,10 @@ Set-Location -Path $env:OUTPUT_DIR
 #    -> Save to: [solution_dir]\parasoft-dottest-reports\baseline\
 #    -> This report will be used as baseline for future fix verifications
 
-$isBaselineRun = ($env:DOTTEST_BASELINE_MODE -and $env:DOTTEST_BASELINE_MODE -eq "true")
+$isBaselineRun = ($env:DOTTEST_BASELINE_MODE -eq "true")
 $isFixRun = -not $isBaselineRun
 $hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
-$baselineReportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\static-analysis\"
+$baselineReportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
 $baselineReportPath = Join-Path $baselineReportDir "report.xml"
 
 if ($isFixRun -and -not $hasFixedFiles) {
@@ -206,9 +211,19 @@ Write-Output "[dottest-analyze] Executing: $dottestExe $($argList -join ' ')"
 # =============================================================================
 # STEP 3: Execute dotTEST analysis
 # =============================================================================
+# Preserve any previous dottestcli output instead of overwriting it
+$dottestCliOutputPath = Join-Path $reportDir "dottestcli_output.txt"
+if (Test-Path -LiteralPath $dottestCliOutputPath) {
+    $archiveIndex = 1
+    while (Test-Path -LiteralPath (Join-Path $reportDir "dottestcli_output ($archiveIndex).txt")) {
+        $archiveIndex++
+    }
+    Rename-Item -LiteralPath $dottestCliOutputPath -NewName "dottestcli_output ($archiveIndex).txt"
+}
+
 # Run the dotTEST CLI with the constructed arguments
 $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
-& $dottestExe @argList > "$reportDir\dottestcli_output.txt"
+& $dottestExe @argList > $dottestCliOutputPath
 
 # Capture the exit code from dotTEST
 $exitCode = $LASTEXITCODE

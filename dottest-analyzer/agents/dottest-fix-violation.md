@@ -15,6 +15,8 @@ The parent agent invokes you with a prompt containing a **JSON payload embedded 
 
 If the prompt does not contain a parseable JSON block, this is an immediate **FAILURE** — stop and report it; do not guess values or invent a work item.
 
+The `environment` property in the actual payload must contain the complete environment object. The ellipsis in the examples is documentation shorthand and must not be emitted literally.
+
 Example JSON payload, by mode:
 
 **Single (complex) violation:**
@@ -22,8 +24,7 @@ Example JSON payload, by mode:
 {
   "mode": "single",
   "scriptDir": "C:\\skills\\dottest-analyzer\\scripts",
-  "agentLogFile": "C:\\MySolution\\parasoft-output\\parasoft-dottest-reports\\agent.log",
-  "baselineReportPath": "C:\\Reports\\base_report.xml",
+  "environment": { "...": "the complete environment snapshot" },
   "violation": {
     "ruleId": "BD.PB.ARRAY",
     "sourceFile": "C:\\MySolution\\MyProject\\Foo.cs",
@@ -39,8 +40,7 @@ Example JSON payload, by mode:
 {
   "mode": "batch",
   "scriptDir": "C:\\skills\\dottest-analyzer\\scripts",
-  "agentLogFile": "C:\\MySolution\\parasoft-output\\parasoft-dottest-reports\\agent.log",
-  "baselineReportPath": "C:\\Reports\\base_report.xml",
+  "environment": { "...": "the complete environment snapshot" },
   "violations": [
     {
       "ruleId": "SEC.USSCR",
@@ -66,7 +66,9 @@ Example JSON payload, by mode:
 
 **Always EXECUTE scripts by running them in a terminal shell. NEVER read, open, or inspect a script file as a substitute for executing it.**
 
-**DO NOT create, modify, or delete any files other than the C# (or VB) source files strictly required to fix the violation and the designated `agentLogFile`.** No summary files, markdown reports, tracking documents, or other auxiliary files.
+**DO NOT create, modify, or delete any files other than the C# (or VB) source files strictly required to fix the violation.** No summary files, markdown reports, tracking documents, or other auxiliary files.
+
+**The `DOTTEST_BASELINE_MODE` and `DOTTEST_FIXED_FILES` environment variables are critical in this agent and MUST be set each time and kept for duration of this agent.**
 
 **NEVER fix a violation by suppressing it.** Do not add `// parasoft-suppress`, or any other suppression mechanism. The fix must resolve the root cause.
 
@@ -83,46 +85,6 @@ All workflow scripts are PowerShell scripts located in the `scriptDir` provided 
 & "<scriptDir>\dottest-analyze.ps1"
 ```
 
-The subagent must resolve the skill environment itself before running any
-workflow script. Run `resolve-config.ps1` in the same PowerShell session using
-dot-sourcing so its variables remain available:
-
-```powershell
-. "<scriptDir>\resolve-config.ps1"
-```
-
-### Agent Conversation Log
-
-At the beginning of the invocation, initialize the exact `agentLogFile` path from
-the input JSON and create its parent directory if necessary. Append to that file
-throughout the entire invocation. The log must contain timestamped, readable
-entries for:
-
-- the parsed work item and configuration (excluding secrets)
-- each reasoning/decision summary before taking an action
-- every MCP call and a concise summary of its result
-- source-file reads and edits
-- every shell command, its stdout/stderr, and exit code
-- each verification result, retry, revert, and commit
-- the final `FIX_RESULT` line
-
-Use an append-only helper such as:
-
-```powershell
-$agentLogPath = [IO.Path]::GetFullPath($workItem.agentLogFile)
-New-Item -ItemType Directory -Path (Split-Path -Parent $agentLogPath) -Force | Out-Null
-function Write-AgentLog {
-  param([string]$Message)
-  Add-Content -LiteralPath $agentLogPath -Value "[$(Get-Date -Format o)] $Message"
-}
-```
-
-Call `Write-AgentLog` before and after each action. Do not use
-`AGENT_LOG_FILE` as a `Tee-Object` target for workflow scripts; the scripts
-manage their own output. This is an operational transcript assembled by the
-agent. Hidden model reasoning is not available to the skill and must not be
-invented or logged.
-
 ## Workflow
 
 ### Step 1: Parse Input
@@ -132,29 +94,35 @@ invented or logged.
 Extract and set:
 - `mode` (`single` or `batch`)
 - `scriptDir` → store for use in script calls
-- `agentLogFile` → use as the agent runtime's transcript log path. Set `$env:AGENT_LOG_FILE` in the terminal session if the agent host uses that variable for transcript logging.
-- `baselineReportPath` is the exact baseline report selected by the parent agent.
+- `environment` → the complete environment snapshot supplied by the parent.
 - Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`
 
-Run `resolve-config.ps1` once in the same terminal session. Do not construct or
-copy configuration from the parent. The resolver is the sole source of
-`SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_HOME`, baseline paths, builder settings,
-and all other skill settings.
+Immediately after resolving configuration, restore every property from `workItem.environment` using the provided `verify-environment.ps1` script:
 
-Immediately after resolving configuration, print every resolved skill
-environment variable for debugging (including variables whose value is empty):
-`DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_TEST_CONFIGURATION`,
-`DOTTEST_SETTINGS`, `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`,
-`DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`,
-`DOTTEST_BUILDER`, `DISABLE_INITIAL_BUILD`, `DISABLE_UNIT_TEST_VERIFICATION`,
-`DOTTEST_INCLUDE`, `DOTTEST_EXCLUDE`, and `DOTTEST_FIXED_FILES`.
-Log the same values through `Write-AgentLog`, excluding
-secrets.
+```powershell
+$expectedEnvironmentJson = $workItem.environment | ConvertTo-Json -Compress
+& (Join-Path $scriptDir "verify-environment.ps1") -ExpectedJson $expectedEnvironmentJson
+if ($LASTEXITCODE -ne 0) {
+  throw "The subagent environment does not match the JSON snapshot."
+}
+```
 
-For `single` and `batch` modes, use the baseline report path supplied in the
-payload. The parent has already created or copied the baseline into the
-canonical output location. Do not search for another report and do not copy
-this report:
+The verifier uses process-level environment APIs, restores every JSON property, and compares every restored value exactly. Do not manually omit, normalize, or override any property from the JSON. This verification must succeed before reading source files, calling MCP tools, applying edits, or running `verify.ps1`/`dottest-analyze.ps1`. Print and log every restored variable, including empty values, excluding secrets.
+
+**Set `$env:DOTTEST_BASELINE_MODE = "false"`. This must be set for all subagent invocations.**
+
+For `single` and `batch` modes, use the baseline path restored from the `environment` object. The parent has already created or copied the baseline into the canonical output location. Do not search for another report and do not copy this report:
+
+```powershell
+$copiedBaseline = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis\report.xml"
+if (Test-Path -LiteralPath $copiedBaseline -PathType Leaf) {
+  $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT = $copiedBaseline
+}
+if (-not (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
+  throw "Baseline static-analysis report was not found in the copied location or configuration."
+}
+$env:DOTTEST_BASELINE_MODE = "false"
+```
 
 ### Step 2: Get Rule Documentation
 
@@ -173,16 +141,24 @@ Read the entire source file containing the violation(s).
 
 Apply the change using the edit tool. Do not rewrite the entire file.
 
+**CRITICAL: After applying the fix, set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated absolute paths of all changed source files before running verification.**  **This is NOT related to `$env:DOTTEST_INCLUDE` - these are two different variables.**
+
 ### Step 5: Verify — Build and Tests
 
 **If `disableUnitTestVerification` is `true`, skip this step entirely and proceed to Step 6.**
-Before running verification, keep `$env:DOTTEST_BASELINE_MODE = "false"` set for the remainder of this invocation. This ensures verification uses fix mode even when unit-test baselines are configured. If this variable is not set to `false`, the scripts safely remain in baseline mode and refuse to treat the run as fix verification.
 
-**CRITICAL:** After applying the fix, set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated absolute paths of all changed source files before running verification. Keep both variables set for the analysis step.
+**Run this guard command before calling the script — do not call `verify.ps1` if it throws:**
+
+```powershell
+if (-not $env:DOTTEST_FIXED_FILES -or $env:DOTTEST_FIXED_FILES -eq "") {
+  throw "DOTTEST_FIXED_FILES is not set. Set it to the changed file(s) from Step 4 before calling verify.ps1."
+}
+if ($env:DOTTEST_BASELINE_MODE -ne "false") {
+  throw "DOTTEST_BASELINE_MODE must be 'false' before calling verify.ps1. Current value: '$($env:DOTTEST_BASELINE_MODE)'."
+}
+```
 
 Run the script directly: `& "<scriptDir>\verify.ps1"`
-
-Do not pipe or tee script output into `AGENT_LOG_FILE`. Log the captured command output explicitly with `Write-AgentLog`; the verification script manages its own output files.
 
 If the script fails (non-zero exit code): this is a **FAILURE**.
 
@@ -190,13 +166,18 @@ Parse the `REPORT_XML=` value from the last stdout line. Check that there are no
 
 ### Step 6: Verify — dotTEST Static Analysis
 
-**CRITICAL:** Set `$env:DOTTEST_FIXED_FILES` to the semicolon-separated absolute paths of all source files changed by the fix. Keep variables for the analysis step.
+**Run this guard command before calling the script — do not call `dottest-analyze.ps1` if it throws:**
+
+```powershell
+if (-not $env:DOTTEST_FIXED_FILES -or $env:DOTTEST_FIXED_FILES -eq "") {
+  throw "DOTTEST_FIXED_FILES is not set. Set it to the changed file(s) from Step 4 before calling dottest-analyze.ps1."
+}
+if ($env:DOTTEST_BASELINE_MODE -ne "false") {
+  throw "DOTTEST_BASELINE_MODE must be 'false' before calling dottest-analyze.ps1. Current value: '$($env:DOTTEST_BASELINE_MODE)'."
+}
+```
 
 Run the script directly: `& "<scriptDir>\dottest-analyze.ps1"`
-
-Do not pipe or tee script output into `AGENT_LOG_FILE`. Log the captured command
-output explicitly with `Write-AgentLog`; the analysis script writes its CLI
-output under the shared static-analysis report directory.
 
 Interpret exit codes:
 - **exit code 0**: proceed to Step 7

@@ -176,7 +176,7 @@ if (-not $env:FIXES_BRANCH_NAME) {
 if (-not $env:DOTTEST_STATIC_NO_OF_MAX_FIXES -or $env:DOTTEST_STATIC_NO_OF_MAX_FIXES -eq "") {
     $env:DOTTEST_STATIC_NO_OF_MAX_FIXES = "5"
 }
-if (-not ($env:DOTTEST_STATIC_NO_OF_MAX_FIXES -as [int]) -or [int]$env:DOTTEST_STATIC_NO_OF_MAX_FIXES -lt 1) {
+if (($env:DOTTEST_STATIC_NO_OF_MAX_FIXES -as [int]) -and [int]$env:DOTTEST_STATIC_NO_OF_MAX_FIXES -lt 1) {
     Die "DOTTEST_STATIC_NO_OF_MAX_FIXES must be a positive integer. Current value: $($env:DOTTEST_STATIC_NO_OF_MAX_FIXES)."
 }
 

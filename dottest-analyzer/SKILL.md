@@ -51,7 +51,7 @@ All settings are read exclusively from environment variables. No interactive pro
 | `DOTTEST_BASE_UNIT_TEST_COVERAGE` | Absolute path to a base `coverage.xml` file. When both `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, Step 2 only verifies the build (no test run), and Step 7 uses Test Impact Analysis (TIA). When not set, Step 2 runs tests with coverage to create the baseline. |
 | `DISABLE_UNIT_TEST_VERIFICATION` | Set to `true` to skip unit test execution in Step 2 (only build check) and Step 7.1 (fix verification). Defaults to `false`. Useful when unit tests are slow or unavailable. |
 | `FIXES_BRANCH_NAME` | Name of the branch to create and switch to before committing fixes. Supports `[timestamp]` pattern (e.g. `my-fixes-[timestamp]`), which is replaced with the current date-time. If not set, commits are applied directly to the currently checked-out branch without creating a new branch. |
-| `DOTTEST_STATIC_NO_OF_MAX_FIXES` | Maximum number of violations to fix. Defaults to 5 if not set, unless user prompt explicitly specifies a different number (e.g. "fix up to 3 violations in file ABC.cs"). |
+| `DOTTEST_STATIC_NO_OF_MAX_FIXES` | Maximum number of violations to fix. Defaults to `5` if not set, unless user prompt explicitly specifies a different number (e.g. "fix up to 3 violations in file ABC.cs"). If set to `ALL` then every violation will be fixed. |
 | `DOTTEST_FIX_ATTEMPTS` | Number of different fix approaches to attempt per violation before giving up. Defaults to 2 (1 original fix + 1 retry with a different approach). |
 | `DOTTEST_REFERENCE_BRANCH` | If set, the skill will compare the current branch with the specified reference branch to determine the analysis scope. The reference branch must exist in the repository. |
 
@@ -63,7 +63,7 @@ All settings are read exclusively from environment variables. No interactive pro
 1. Editing C# (or VB) source files to apply violation fixes
 2. Git operations (commit, revert)
 
-**If prompt would suggest overriding the setting, it takes priority over environment variable.**. E.g. if user says "fix up to 3 violations in file ABC.cs" then `DOTTEST_STATIC_NO_OF_MAX_FIXES` is set to 1, then fix up to 3 violations.
+**If prompt would suggest overriding the setting, it takes priority over environment variable.**. E.g. if user says "fix up to 3 violations in file ABC.cs" then `DOTTEST_STATIC_NO_OF_MAX_FIXES` is set to 3, then fix up to 3 violations.
 
 **NEVER fix a violation by suppressing it.** Do not add suppression comments (e.g. `// parasoft-suppress`), or any other suppression mechanism. A fix must resolve the root cause of the violation in the code itself.
 
@@ -126,6 +126,8 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 ### Step 2: Verify Build and Tests
 
+Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
+
 **Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
 **Verify the solution builds and unit tests pass.** The verification behavior depends on whether baseline files are provided and the `DISABLE_UNIT_TEST_VERIFICATION` setting:
@@ -156,10 +158,9 @@ If unit tests were executed, check that there are no unit test failures in the `
 
 **Keep the environment consistent** with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified. Do not change any variable values or the environment in any way before calling the verification script.
 
-Run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`.
-Before invoking it, set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested.
+set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
 
-Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script defaults to baseline mode when this variable is missing, but the skill sets it explicitly for debugging and safety.
+Run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`.
 
 The baseline analysis must complete before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected baseline path in its JSON payload and uses it as its reference report.
 
@@ -190,7 +191,7 @@ Process violations in the following deterministic order:
 
 ### Step 6: Fix, Verify, and Commit — Delegate to `dottest-fix-violation` Agent
 
-If `DOTTEST_BASELINE_MODE` is set to `true` make sure to **unset it or set to `false`** before spawning the `dottest-fix-violation` agent. The fix agent must run in normal mode, not baseline mode.
+Set `DOTTEST_BASELINE_MODE=false` in the environment snapshot before spawning the `dottest-fix-violation` agent. The fix agent must run in fix mode, not baseline mode; the scripts reject a missing or invalid mode value.
 
 Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
 
@@ -229,13 +230,46 @@ For each violation or batch, populate one of the JSON payloads below and embed i
 
 The payload **must include all context** the agent needs (it runs in its own isolated context and has no access to the parent's conversation history):
 
+Immediately before spawning the agent, build an `environment` JSON object from the current parent process. It must contain every variable printed by `resolve-config.ps1` plus the post-resolution scope and mode values below.
+Represent `(not set)` as an empty string. Do not pass the literal display text `(current branch)`; pass the actual `FIXES_BRANCH_NAME` process value, which is empty when commits stay on the current branch. Capture this object after Step 3 has selected the baseline paths.
+
+```json
+{
+  "DOTTEST_ANALYZER_CONFIG": "<value>",
+  "DOTTEST_HOME": "<value>",
+  "SOLUTION_PATH": "<value>",
+  "OUTPUT_DIR": "<value>",
+  "DOTTEST_TEST_CONFIGURATION": "<value>",
+  "DOTTEST_COMMIT_FIXES": "<value>",
+  "DISABLE_UNIT_TEST_VERIFICATION": "<value>",
+  "DISABLE_INITIAL_BUILD": "<value>",
+  "DOTTEST_FILTER_RULE": "<value>",
+  "DOTTEST_SETTINGS": "<value>",
+  "DOTTEST_BASE_STATIC_ANALYSIS_REPORT": "<value>",
+  "DOTTEST_BASE_UNIT_TEST_REPORT": "<value>",
+  "DOTTEST_BASE_UNIT_TEST_COVERAGE": "<value>",
+  "DOTTEST_STATIC_NO_OF_MAX_FIXES": "<value>",
+  "FIXES_BRANCH_NAME": "<value>",
+  "DOTTEST_FIX_ATTEMPTS": "<value>",
+  "DOTTEST_BUILDER": "<value>",
+  "DOTTEST_REFERENCE_BRANCH": "<value>",
+  "GIT_BRANCH": "<value>",
+  "GIT_WORKSPACE": "<value>",
+  "DOTTEST_INCLUDE": "<value>",
+  "DOTTEST_EXCLUDE": "<value>",
+  "DOTTEST_BASELINE_MODE": "false"
+}
+```
+
+The `environment` object must be identical in the single and batch payloads. Do not add a second copy of these values as top-level payload properties. The `{ "...": ... }` notation in the payload examples is documentation shorthand; the actual emitted JSON must contain every property from the complete object above.
+
 **Single (complex) violation:**
 ```json
 {
   "mode": "single",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "baselineReportPath": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
+  "environment": { "...": "the complete environment object above" },
   "violation": {
     "ruleId": "<rule_id>",
     "sourceFile": "<absolute_path>",
@@ -252,20 +286,20 @@ The payload **must include all context** the agent needs (it runs in its own iso
   "mode": "batch",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "agentLogFile": "<agentLogFile>",
-  "baselineReportPath": "<DOTTEST_BASE_STATIC_ANALYSIS_REPORT>",
+  "environment": { "...": "the complete environment object above" },
   "violations": [ ... ]
 }
 ```
 
 `agentLogFile` is the operational conversation log for the `dottest-fix-violation` agent. The agent must append its decisions, MCP results, commands, verification output, retries, and final result to this file. Do not use it as a `Tee-Object` target when running `verify.ps1` or `dottest-analyze.ps1`; those scripts manage their own output files. Hidden model reasoning is not available to the skill and is not included.
 
-The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session before running the workflow scripts.
+The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session, restores the complete `environment` object using `verify-environment.ps1`, and must stop on a verification failure before running `verify.ps1` or `dottest-analyze.ps1`.
 
 #### Collecting Results
 
 Parse the `FIX_RESULT=` JSON line from the agent's output. Update counters:
 
-- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES`, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
+- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES` (unless all violations must be fixed), print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
 - If `status` is `"FAILURE"`: record the failure and move on to the next violation.
 
 #### Processing Order

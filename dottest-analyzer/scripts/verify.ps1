@@ -38,6 +38,11 @@ Write-Output "[verify] SOLUTION_PATH = $env:SOLUTION_PATH"
 Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 Set-Location -Path $env:OUTPUT_DIR
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+
 # This marker is consumed by dottest-analyze.ps1 in the same workflow. Reset it
 # for every verification so a previous step cannot suppress a required build.
 
@@ -77,7 +82,11 @@ if (Test-Path -LiteralPath $baselineUnitCoverage -PathType Leaf) {
 # ---------------------------------------------------------------------------
 $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST_VERIFICATION -eq "true")
 $hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
-$isBaselineMode = (-not ($env:DOTTEST_BASELINE_MODE -and $env:DOTTEST_BASELINE_MODE -eq "false"))
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+$isBaselineMode = ($env:DOTTEST_BASELINE_MODE -eq "true")
 $isFixVerification = -not $isBaselineMode
 
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
@@ -200,8 +209,18 @@ if ($buildOnlyMode) {
 
     Write-Output "[verify] Running: $dottestExe $($argList -join ' ')"
 
+    # Preserve any previous dottestcli output instead of overwriting it
+    $dottestCliOutputPath = Join-Path $reportDir "dottestcli_output.txt"
+    if (Test-Path -LiteralPath $dottestCliOutputPath) {
+        $archiveIndex = 1
+        while (Test-Path -LiteralPath (Join-Path $reportDir "dottestcli_output ($archiveIndex).txt")) {
+            $archiveIndex++
+        }
+        Rename-Item -LiteralPath $dottestCliOutputPath -NewName "dottestcli_output ($archiveIndex).txt"
+    }
+
     $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
-    & $dottestExe @argList > "$reportDir\dottestcli_output.txt"
+    & $dottestExe @argList > $dottestCliOutputPath
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -ne 0) {
