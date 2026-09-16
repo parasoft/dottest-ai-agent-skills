@@ -99,7 +99,7 @@ if ($buildOnlyMode) {
 
         $attemptedBuild = $true
         Write-Output "[verify] Running: $($method.Display)"
-        & $method.Command @($method.Args) > "$env:OUTPUT_DIR\build_output.txt"
+        & $method.Command @($method.Args) > "$env:OUTPUT_DIR\parasoft-dottest-reports\baseline\unit-tests\build_output.log"
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 0) {

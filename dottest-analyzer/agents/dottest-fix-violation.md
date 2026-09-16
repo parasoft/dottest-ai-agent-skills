@@ -70,9 +70,7 @@ Example JSON payload, by mode:
 
 **The `DOTTEST_BASELINE_MODE` and `DOTTEST_FIXED_FILES` environment variables are critical in this agent and MUST be set each time and kept for duration of this agent.**
 
-**NEVER fix a violation by suppressing it.** Do not add `// parasoft-suppress`, or any other suppression mechanism. The fix must resolve the root cause.
-
-**MCP tool calls MUST be executed one at a time, strictly sequentially and synchronously.** Never invoke two or more MCP tools in parallel.
+**NEVER fix a violation by suppressing it unless you are certain that it is false positive.** If so add comment `// parasoft-suppress <RULE_ID> <reasoning>` to line where violation is reported (start line). If line already has a suppression then add new comment after the first one in the same line.
 
 **When applying multiple fixes within the same file (batch mode), always work bottom to top:** apply the fix at the highest line number first, then move upward. This prevents earlier edits from shifting positions of violations yet to be fixed.
 

@@ -65,8 +65,6 @@ All settings are read exclusively from environment variables. No interactive pro
 
 **If prompt would suggest overriding the setting, it takes priority over environment variable.**. E.g. if user says "fix up to 3 violations in file ABC.cs" then `DOTTEST_STATIC_NO_OF_MAX_FIXES` is set to 3, then fix up to 3 violations.
 
-**NEVER fix a violation by suppressing it.** Do not add suppression comments (e.g. `// parasoft-suppress`), or any other suppression mechanism. A fix must resolve the root cause of the violation in the code itself.
-
 **If all violations have been fixed or are suppressed, do NOT rerun analysis under different conditions (e.g. a different test configuration, different scope, or different filter). Assume all work is done, stop immediately with success status and message: "No violations were found for the given scope".**
 
 **Each fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. Commit logic is handled by the `dottest-fix-violation` custom subagent.
