@@ -165,7 +165,7 @@ Alternatively, values can be placed in an optional config file and loaded via `D
 | `DOTTEST_COMMIT_FIXES` | `false` | Set to `true` to automatically commit each successful fix as a separate Git commit. |
 | `DOTTEST_FILTER_RULE` | *(all rules)* | Comma-separated rule IDs to process. When set, only violations matching these IDs are fixed. Example: `BD.PB.CC,SEC.VPPD`. |
 | `DOTTEST_SETTINGS` | *(none)* | Absolute path to a dotTEST settings file. Adds `-settings=<path>` to all analysis commands. |
-| `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` | *(none)* | Absolute path to an existing `report.xml`. When set and its test configuration matches `DOTTEST_TEST_CONFIGURATION`, the analysis step is skipped and this file is used as the baseline. |
+| `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` | *(none)* | Absolute path to an existing static-analysis `report.xml`. When set and its test configuration matches `DOTTEST_TEST_CONFIGURATION`, no new baseline analysis is created; the configured report is copied to the canonical baseline location and used as the baseline. |
 | `DOTTEST_BASE_UNIT_TEST_REPORT` | *(none)* | Absolute path to a base unit test `report.xml`. When both this and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, the initial verification only checks the build and TIA is used for fix verification. |
 | `DOTTEST_BASE_UNIT_TEST_COVERAGE` | *(none)* | Absolute path to a base `coverage.xml`. Required together with `DOTTEST_BASE_UNIT_TEST_REPORT` to enable Test Impact Analysis (TIA). |
 | `DISABLE_UNIT_TEST_VERIFICATION` | `false` | Set to `true` to skip unit test execution during build verification. Useful when tests are slow or unavailable. |
@@ -189,6 +189,20 @@ set "DOTTEST_ANALYZER_CONFIG=C:\projects\myapp\dottest-analyzer.config"
 ```
 
 Values defined in the file are overridden by any environment variable with the same name, making per-run overrides easy without editing the file.
+
+### Report locations and output markers
+
+Reports are written below `OUTPUT_DIR\parasoft-dottest-reports\`:
+
+| Report | Location | Script output marker |
+|---|---|---|
+| Static-analysis baseline | `baseline\static-analysis\report.xml` | `SA_REPORT_XML=<absolute path>` |
+| Unit-test baseline | `baseline\unit-tests\report.xml` | `UT_REPORT_XML=<absolute path>` |
+| Unit-test baseline coverage | `baseline\unit-tests\coverage.xml` | — |
+| Static-analysis fix verification | `static-analysis\report.xml` | `SA_REPORT_XML=<absolute path>` |
+| Unit-test fix verification | `unit-tests\report.xml` | `UT_REPORT_XML=<absolute path>` |
+
+Configured baseline files are copied into the canonical baseline locations and prevent new baseline creation. If a baseline is not configured, the skill generates a fresh one and updates its runtime environment with the emitted path. Existing output files alone do not select a baseline.
 
 ---
 
@@ -435,7 +449,7 @@ Limit the scope of each agent session. Processing all violations in one run make
 
 ### Verify test coverage is maintained
 
-After merging a batch of fixes, check that code coverage has not dropped. Unit test reports for each fix are stored in `OUTPUT_DIR\parasoft-dottest-reports\fix-N\unit-tests\` and include coverage data when TIA is enabled.
+After merging a batch of fixes, check that code coverage has not dropped. Fix verification unit-test reports are stored in `OUTPUT_DIR\parasoft-dottest-reports\unit-tests\` and include coverage data when TIA is enabled.
 
 ### Keep the baseline report up to date
 
@@ -580,4 +594,3 @@ For **nightly full-project scans**, schedule the workflow on a cron trigger and 
 6. Enabling automatic commit mode.
 
 Start there for a hands-on introduction before applying the skill to your own project.
-

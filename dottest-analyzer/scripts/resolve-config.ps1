@@ -14,7 +14,7 @@
 #   DOTTEST_BASE_STATIC_ANALYSIS_REPORT, FIXES_BRANCH_NAME,
 #   DOTTEST_BASE_UNIT_TEST_REPORT, DOTTEST_BASE_UNIT_TEST_COVERAGE,
 #   DOTTEST_STATIC_NO_OF_MAX_FIXES, DOTTEST_FIX_ATTEMPTS, DOTTEST_REFERENCE_BRANCH,
-#   DOTTEST_BUILDER, GIT_BRANCH, GIT_WORKSPACE
+#   DOTTEST_BUILDER, DISABLE_INITIAL_BUILD, GIT_BRANCH, GIT_WORKSPACE
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +45,7 @@ $recognizedKeys = @(
 )
 
 $configPath = $env:DOTTEST_ANALYZER_CONFIG
+if ($configPath) { $configPath = $configPath.Trim('"').Trim("'") }
 if ($configPath -and $configPath -ne "") {
     if (-not (Test-Path $configPath -PathType Leaf)) {
         Die "DOTTEST_ANALYZER_CONFIG points to a file that does not exist: $configPath. Verify the path and retry."
@@ -55,7 +56,7 @@ if ($configPath -and $configPath -ne "") {
         $eqIdx = $trimmed.IndexOf("=")
         if ($eqIdx -lt 1) { continue }
         $key = $trimmed.Substring(0, $eqIdx).Trim()
-        $val = $trimmed.Substring($eqIdx + 1).Trim()
+        $val = $trimmed.Substring($eqIdx + 1).Trim().Trim('"').Trim("'")
         if ($recognizedKeys -contains $key) {
             SetIfUnset $key $val
         }
@@ -166,7 +167,7 @@ if (-not $env:FIXES_BRANCH_NAME) {
 if (-not $env:DOTTEST_STATIC_NO_OF_MAX_FIXES -or $env:DOTTEST_STATIC_NO_OF_MAX_FIXES -eq "") {
     $env:DOTTEST_STATIC_NO_OF_MAX_FIXES = "5"
 }
-if (-not ($env:DOTTEST_STATIC_NO_OF_MAX_FIXES -as [int]) -or [int]$env:DOTTEST_STATIC_NO_OF_MAX_FIXES -lt 1) {
+if (($env:DOTTEST_STATIC_NO_OF_MAX_FIXES -as [int]) -and [int]$env:DOTTEST_STATIC_NO_OF_MAX_FIXES -lt 1) {
     Die "DOTTEST_STATIC_NO_OF_MAX_FIXES must be a positive integer. Current value: $($env:DOTTEST_STATIC_NO_OF_MAX_FIXES)."
 }
 

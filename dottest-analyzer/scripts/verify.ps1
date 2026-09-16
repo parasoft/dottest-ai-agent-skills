@@ -10,8 +10,8 @@
 #   - Sets DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE env vars for subsequent steps
 #
 # SCENARIO 2: Baseline files provided (both DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE set)
-#   a) Initial verification (Step 2, no FIX_NUMBER): Only builds the solution with dotnet/devenv
-#   b) Fix verification (Step 7, has FIX_NUMBER): Runs tests with TIA using baseline
+#   a) Initial verification (Step 2, DOTTEST_BASELINE_MODE is true): Only builds the solution
+#   b) Fix verification (DOTTEST_BASELINE_MODE is false): Runs tests with TIA using baseline
 #
 # SCENARIO 3: DISABLE_UNIT_TEST_VERIFICATION is set to "true"
 #   - Always only builds the solution with dotnet/devenv/msbuild, never runs tests
@@ -23,7 +23,7 @@
 #   DOTTEST_BASE_UNIT_TEST_REPORT      – Baseline report.xml for TIA (may be empty)
 #   DOTTEST_BASE_UNIT_TEST_COVERAGE    – Baseline coverage.xml for TIA (may be empty)
 #   OUTPUT_DIR                         – Absolute path to the directory where output will be stored (may be empty)
-#   FIX_NUMBER                         – Set during fix verification (Step 7), empty during initial verification (Step 2)
+#   DOTTEST_BASELINE_MODE             – Set to true for baseline verification; false for fix verification
 #   DISABLE_UNIT_TEST_VERIFICATION     – Set to "true" to skip all unit test execution (defaults to "false")
 #   DISABLE_INITIAL_BUILD              – Set to "true" to skip initial build verification (defaults to "false")
 #
@@ -39,19 +39,29 @@ Write-Output "[verify] DOTTEST_HOME  = $env:DOTTEST_HOME"
 
 Set-Location -Path $env:OUTPUT_DIR
 
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+
 # ---------------------------------------------------------------------------
 # Determine verification mode
 # ---------------------------------------------------------------------------
 $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST_VERIFICATION -eq "true")
-$hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and `
-               ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
-$isFixVerification = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
+$hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+$isBaselineMode = ($env:DOTTEST_BASELINE_MODE -eq "true")
+$isFixVerification = -not $isBaselineMode
 
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 
 if ($buildOnlyMode) {
     if ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true") {
         Write-Output "[verify] DISABLE_INITIAL_BUILD is set to true. Skipping build verification."
+        Write-Output "BUILD_PERFORMED=false"
         exit 0
     }
 
@@ -89,7 +99,7 @@ if ($buildOnlyMode) {
 
         $attemptedBuild = $true
         Write-Output "[verify] Running: $($method.Display)"
-        & $method.Command @($method.Args) > "$env:OUTPUT_DIR\build_output.txt"
+        & $method.Command @($method.Args) > "$env:OUTPUT_DIR\parasoft-dottest-reports\baseline\unit-tests\build_output.log"
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 0) {
@@ -110,6 +120,7 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
     
+    Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Build completed successfully."
     exit 0
     
@@ -118,7 +129,7 @@ if ($buildOnlyMode) {
     if ($hasBaseline) {
         # SCENARIO 2b: Baseline provided + fix verification - run tests with TIA
         Write-Output "[verify] Running tests with TIA using baseline files..."
-        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\unit-tests"
+        $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\unit-tests"
     } else {
         # SCENARIO 1: No baseline - create baseline by running tests with coverage
         Write-Output "[verify] No baseline files provided. Running tests with coverage to create baseline..."
@@ -165,8 +176,14 @@ if ($buildOnlyMode) {
 
     Write-Output "[verify] Running: $dottestExe $($argList -join ' ')"
 
+    # Use a unique capture file for every invocation. A previous dotTEST
+    # process may still have its capture file open, so archiving it with
+    # Rename-Item (or overwriting it with redirection) is not safe.
+    $captureId = "{0:yyyyMMdd-HHmmssfff}" -f (Get-Date)
+    $dottestCliOutputPath = Join-Path $reportDir "dottestcli_output-$captureId.txt"
+
     $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
-    & $dottestExe @argList > "$reportDir\dottestcli_output.txt"
+    & $dottestExe @argList > $dottestCliOutputPath
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -ne 0) {
@@ -188,9 +205,11 @@ if ($buildOnlyMode) {
         Write-Output "DOTTEST_BASE_UNIT_TEST_COVERAGE=$baselineCoverage"
     }
 
+    # Running dotTEST for tests also performs the solution build.
+    Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Tests completed successfully."
         $reportXml = Join-Path $reportDir "report.xml"
-        Write-Output "REPORT_XML=$reportXml"
+        Write-Output "UT_REPORT_XML=$reportXml"
 
     exit 0
 }

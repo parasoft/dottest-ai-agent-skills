@@ -10,20 +10,19 @@
 #   SOLUTION_PATH              - Full path to .sln file to analyze
 #
 # OPTIONAL ENVIRONMENT VARIABLES:
-#   DOTTEST_TEST_CONFIGURATION - Test configuration name (default: "builtin://Recommended Rules")
-#   DOTTEST_SETTINGS           - Path to dotTEST settings file (empty = not used)
-#   DOTTEST_INCLUDE            - Specific file path to analyze (empty = analyze all)
-#   DOTTEST_EXCLUDE            - Specific file path to exclude from analysis (empty = analyze all)
-#   DOTTEST_REF_REPORT_FILE    - Path to baseline report.xml for fix verification (empty = initial analysis)
-#   DOTTEST_REF_REPORT_EXCLUDE - Set to "false" for fix verification (empty = initial analysis)
-#   FIX_NUMBER                 - Sequential fix number (e.g., "1", "2", "3") for fix verification runs
+#   DOTTEST_TEST_CONFIGURATION             - Test configuration name (default: "builtin://Recommended Rules")
+#   DOTTEST_SETTINGS                       - Path to dotTEST settings file (empty = not used)
+#   DOTTEST_INCLUDE                        - Specific file path to analyze (empty = analyze all)
+#   DOTTEST_EXCLUDE                        - Specific file path to exclude from analysis (empty = analyze all)
+#   DOTTEST_BASE_STATIC_ANALYSIS_REPORT    - Path to baseline report.xml for fix verification (empty = initial analysis)
+#   DOTTEST_BASELINE_MODE                  - Must be true for baseline or false for fix verification
 #
 # OUTPUT:
 #   Creates report.xml in one of two locations:
 #   - Initial analysis: [solution_dir]\parasoft-dottest-reports\baseline\report.xml
-#   - Fix verification: [solution_dir]\parasoft-dottest-reports\fix[FIX_NUMBER]\report.xml
+#   - Fix verification: [solution_dir]\parasoft-dottest-reports\static-analysis\report.xml
 #   
-#   Prints the absolute path on the LAST line as: REPORT_XML=<path>
+#   Prints the absolute path on the LAST line as: SA_REPORT_XML=<path>
 #
 # EXIT CODES:
 #   0 - Analysis completed successfully, report.xml created
@@ -40,35 +39,56 @@ Write-Output "[dottest-analyze] DOTTEST_HOME  = $env:DOTTEST_HOME"
 # Change working directory to solution directory
 Set-Location -Path $env:OUTPUT_DIR
 
+if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
+    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
+    exit 1
+}
+
 # =============================================================================
 # STEP 1: Determine report output directory
 # =============================================================================
 # Two scenarios:
-# 1. Fix verification run: Reference report file is provided
-#    -> Save to: [solution_dir]\parasoft-dottest-reports\fix[N]\
+# 1. Fix verification run: DOTTEST_BASELINE_MODE is false
+#    -> Save to: [solution_dir]\parasoft-dottest-reports\static-analysis\
 #    -> This report will be compared against the baseline
 
-# 2. Initial baseline analysis: No reference report file provided
+# 2. Initial baseline analysis: DOTTEST_BASELINE_MODE is true or unset
 #    -> Save to: [solution_dir]\parasoft-dottest-reports\baseline\
 #    -> This report will be used as baseline for future fix verifications
 
-if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
-    # Fix verification: Create numbered fix report directory
-    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\fix-$($env:FIX_NUMBER)\static-analysis"
+$isBaselineRun = ($env:DOTTEST_BASELINE_MODE -eq "true")
+$isFixRun = -not $isBaselineRun
+$hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
+$baselineReportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
+$baselineReportPath = Join-Path $baselineReportDir "report.xml"
+
+if ($isFixRun -and -not $hasFixedFiles) {
+    Write-Error "ERROR: Fix verification run requested, but DOTTEST_FIXED_FILES is not set."
+    exit 1
+}
+
+if ($isBaselineRun -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT) {
+    Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
+    Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."
+
+    Write-Output "SA_REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
+    exit 0
+}
+
+if ($isFixRun) {
+    # Fix verification: use the shared static-analysis report directory
+    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\static-analysis"
     Write-Output "[dottest-analyze] Mode: Fix verification (comparing against baseline)"
+
+    if (-not $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -or
+        -not (Test-Path -LiteralPath $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -PathType Leaf)) {
+        Write-Error "ERROR: DOTTEST_BASE_STATIC_ANALYSIS_REPORT does not point to an existing baseline report."
+        exit 1
+    }
 } else {
     # Initial analysis: Create baseline report directory
-    $reportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\static-analysis"
+    $reportDir = $baselineReportDir
     Write-Output "[dottest-analyze] Mode: Initial baseline analysis"
-
-    # If a baseline report is already provided, check whether it was produced with the
-    # same test configuration. If so, skip re-running the analysis and reuse it.
-    if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "" -and (Test-Path $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)) {
-        Write-Output "[dottest-analyze] Baseline report already provided at: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
-        Write-Output "[dottest-analyze] Skipping initial analysis - reusing existing baseline."
-        Write-Output "REPORT_XML=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
-        exit 0
-    }
 }
 
 # Create report directory if it doesn't exist (including all parent directories)
@@ -96,8 +116,6 @@ $argList = @(
 # Add optional arguments if environment variables are set
 
 # Scope selection: first run uses DOTTEST_INCLUDE; fix verification runs use DOTTEST_FIXED_FILES
-$isFixRun = ($env:FIX_NUMBER -and $env:FIX_NUMBER -ne "")
-$hasFixedFiles = ($env:DOTTEST_FIXED_FILES -and $env:DOTTEST_FIXED_FILES -ne "")
 if ($isFixRun -or $hasFixedFiles) {
     # Fix verification: scope to the exact files that were changed
     $includes = $env:DOTTEST_FIXED_FILES -split ';'
@@ -142,17 +160,11 @@ if ($env:DOTTEST_SETTINGS -and $env:DOTTEST_SETTINGS -ne "") {
     Write-Output "[dottest-analyze] Using settings file: $($env:DOTTEST_SETTINGS)"
 }
 
-# DOTTEST_REF_REPORT_FILE: Baseline report for comparison
+# DOTTEST_BASE_STATIC_ANALYSIS_REPORT: Baseline report for comparison
 # Used during fix verification to compare results against the initial baseline
-if ($env:DOTTEST_REF_REPORT_FILE -and $env:DOTTEST_REF_REPORT_FILE -ne "") {
-    $argList += @("-property", "goal.ref.report.file=$($env:DOTTEST_REF_REPORT_FILE)")
-    Write-Output "[dottest-analyze] Using baseline report: $($env:DOTTEST_REF_REPORT_FILE)"
-}
-
-# DOTTEST_REF_REPORT_EXCLUDE: Control which findings to include in comparison
-# Set to "false" during fix verification to include all findings relative to baseline
-if ($env:DOTTEST_REF_REPORT_EXCLUDE -and $env:DOTTEST_REF_REPORT_EXCLUDE -ne "") {
-    $argList += @("-property", "goal.ref.report.findings.exclude=$($env:DOTTEST_REF_REPORT_EXCLUDE)")
+if ($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -and $env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT -ne "") {
+    $argList += @("-property", "goal.ref.report.file=$($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)")
+    Write-Output "[dottest-analyze] Using baseline report: $($env:DOTTEST_BASE_STATIC_ANALYSIS_REPORT)"
 }
 
 # DOTTEST_BUILDER: Builder to use for compilation
@@ -173,14 +185,27 @@ if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
     $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
 }
 
+# verify.ps1 may already have built the solution, either through a configured
+# builder or through dottestcli while running tests. Avoid performing the same
+# build again. If verification was skipped, leave this unset/false so analysis
+# performs the required build itself.
+$argList += @("-nobuild")
+
+
 Write-Output "[dottest-analyze] Executing: $dottestExe $($argList -join ' ')"
 
 # =============================================================================
 # STEP 3: Execute dotTEST analysis
 # =============================================================================
+# Use a unique capture file for every invocation. A previous dotTEST process
+# may still have its capture file open, so archiving it with Rename-Item (or
+# overwriting it with redirection) is not safe.
+$captureId = "{0:yyyyMMdd-HHmmssfff}" -f (Get-Date)
+$dottestCliOutputPath = Join-Path $reportDir "dottestcli_output-$captureId.txt"
+
 # Run the dotTEST CLI with the constructed arguments
 $env:PARASOFT_DOTTEST_AUTOFIX_MODE = "true"
-& $dottestExe @argList > "$reportDir\dottestcli_output.txt"
+& $dottestExe @argList > $dottestCliOutputPath
 
 # Capture the exit code from dotTEST
 $exitCode = $LASTEXITCODE
@@ -205,6 +230,6 @@ Write-Output "[dottest-analyze] Analysis completed successfully."
 # Construct and output the path to the generated report.xml
 # The skill will parse this line to locate the report for downstream processing
 $reportXml = Join-Path $reportDir "report.xml"
-Write-Output "REPORT_XML=$reportXml"
+Write-Output "SA_REPORT_XML=$reportXml"
 
 exit 0
