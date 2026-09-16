@@ -69,8 +69,6 @@ All settings are read exclusively from environment variables. No interactive pro
 
 **Each fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. Commit logic is handled by the `dottest-fix-violation` custom subagent.
 
-**MCP tool calls MUST be executed one at a time, strictly sequentially and synchronously.** Never invoke two or more MCP tools in parallel or in an overlapping manner. Each MCP tool call must fully complete and its result must be received before the next MCP tool call is initiated. This applies to all MCP tools used in this skill (e.g., `get_violations_from_report_file`, `get_rule_documentation`).
-
 **If no `report.xml` with analysis results is provided or referenced at the start of execution, the skill MUST always run the full dotTEST analysis first (Step 3) to produce the report before attempting to identify or fix any violations.** Never skip straight to fixing violations without a freshly generated or explicitly provided report. The report obtained in Step 3 is the mandatory input for Steps 4-6. **If any XML report (provided by `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT` or created by Step 3) is about to be read, then always use `dottestmcp` MCP tool. **
 
 ## How This Skill Works
