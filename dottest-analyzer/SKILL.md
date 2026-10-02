@@ -126,7 +126,7 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 ### Step 2: Verify Build and Tests
 
-Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
+`DOTTEST_BASELINE_MODE` controls `dottest-analyze.ps1`; it is not a setting for `verify.ps1`. Do not set or change it for build and test verification. Set `DOTTEST_BASELINE_MODE=true` immediately before invoking `dottest-analyze.ps1` in Step 3. The analysis script requires this value explicitly and fails if the mode is missing or invalid.
 
 Immediately before invoking `verify.ps1`, invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This restores and verifies the exact current environment object, including its current baseline values. If it fails, terminate immediately; do not rerun `resolve-config.ps1`.
 
@@ -160,13 +160,11 @@ After `verify.ps1` completes successfully, update the `$environment` object and 
 
 Immediately before invoking `dottest-analyze.ps1`, invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This must succeed before analysis starts. Do not rerun `resolve-config.ps1`.
 
-set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated list of scope patterns derived from the user's request in Step 1, or empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` before the baseline analysis invocation. The script requires this value explicitly and fails if the mode is missing or invalid.
+Set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated scope patterns derived from the user's request in Step 1, or to empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` immediately before invoking `dottest-analyze.ps1`. The script requires this value explicitly and fails if the mode is missing or invalid.
 
-Run the baseline analysis here in the skill by invoking `dottest-analyze.ps1`.
+Always invoke `dottest-analyze.ps1` in this step. If `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` was provided in the initial configuration, the script must select that report, copy it to the canonical baseline location, and must not run a new full static analysis. If no static-analysis baseline was provided, the script runs the analysis to create one. In either case, it must exit with code `0` on success and a non-zero code on failure, and print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success. The emitted path identifies the selected canonical report for the subsequent steps.
 
-The baseline analysis must complete before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected baseline path in its JSON payload and uses it as its reference report.
-
-When the baseline is generated, the script **must** exit with code `0` on success and a non-zero code on failure, and must print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success.
+The selected baseline report must be available before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected report path in its JSON payload and uses it as its reference report.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
 
 **After successful completion of this step, the baseline report file path must be stored in `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` for use in Step 4.**
