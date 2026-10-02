@@ -22,7 +22,7 @@ This skill enables GitHub Copilot to run Parasoft dotTEST Static Analysis on .NE
 
 > **Perform Steps in Order, from 1 to 7** and do not deviate from the defined sequence. Each step relies on the successful completion of the previous steps, and skipping or reordering them may lead to incorrect behavior or failures. Follow the steps exactly as outlined to ensure the skill functions as intended.
 
-**Do not run any other scripts than the ones provided by this skill.** All scripts required for configuration, analysis, verification, and fixing are included in the `scripts` directory of this skill. Do not create, modify, or execute any other scripts or commands outside of those defined in this document.
+**Do not run any other scripts than the ones provided by this skill.** The skill package must include `scripts/resolve-config.ps1`, `scripts/verify-environment.ps1`, `scripts/verify.ps1`, and `scripts/dottest-analyze.ps1`, and the coding agent must have the `dottest-fix-violation` agent available. Before Step 1, confirm that these dependencies are available. If a required script or agent is missing, stop with a clear error; do not continue with an incomplete workflow. Do not create, modify, or execute any other scripts or commands outside of those defined in this document.
 
 ## When to Use This Skill
 
@@ -57,6 +57,8 @@ All settings are read exclusively from environment variables. No interactive pro
 
 ## Critical Constraints
 
+The scripts and the `dottest-fix-violation` agent named above are runtime dependencies, not optional examples. The skill cannot complete its workflow without them. Keep the package inventory and installation instructions synchronized with this list.
+
 **Always EXECUTE scripts by running them in a terminal shell. NEVER read, open, or inspect a script file as a substitute for executing it.** When a step says `Run dottest-analyze` script, that means invoke the command in a terminal and wait for its exit code and stdout output. Reading the script file with a file-read tool is forbidden and does not satisfy the step requirement. All scripts are located in the `scripts` directory of the skill and are designed to be executed with the environment variables set by Step 1.
 
 **DO NOT create, modify, or delete any files other than the source files strictly required to fix a violation.** Do not generate summary files, markdown reports, tracking documents, analysis notes, or any other auxiliary files in the repository or anywhere else. The only file modifications permitted are:
@@ -67,7 +69,7 @@ All settings are read exclusively from environment variables. No interactive pro
 
 **If all violations have been fixed or are suppressed, do NOT rerun analysis under different conditions (e.g. a different test configuration, different scope, or different filter). Assume all work is done, stop immediately with success status and message: "No violations were found for the given scope".**
 
-**Each fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. Commit logic is handled by the `dottest-fix-violation` custom subagent.
+**When `DOTTEST_COMMIT_FIXES=true`, each successful fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. When `DOTTEST_COMMIT_FIXES` is not `true`, do not create commits; leave successful fixes as local changes. Commit logic is handled by the `dottest-fix-violation` custom subagent.
 
 **If no `report.xml` with analysis results is provided or referenced at the start of execution, the skill MUST always run the full dotTEST analysis first (Step 3) to produce the report before attempting to identify or fix any violations.** Never skip straight to fixing violations without a freshly generated or explicitly provided report. The report obtained in Step 3 is the mandatory input for Steps 4-6. **If any XML report (provided by `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT` or created by Step 3) is about to be read, then always use `dottestmcp` MCP tool. **
 
@@ -77,7 +79,7 @@ All settings are read exclusively from environment variables. No interactive pro
 
 All configuration loading, parsing, validation, and dotTEST installation verification is performed by the **`resolve-config.ps1`** script located in `scripts` directory.
 
-During processing of this skill invoke the `resolve-config.ps1` script **ONCE**. Do NOT rerun this script once it has been correctly executed. **DO NOT set any environmental variable** unless it is already set up. The script will set all required environment variables. If any required variable is missing or invalid, the script prints a descriptive error message and exits with a non-zero code. If the script exits with an error, print `ERROR: Configuration error - [error message from script]` and terminate skill immediately with non-zero exit code. **After the script returns, verify that the current environment actually matches what it printed: for every `Resolved configuration` line whose value is not `(not set)`, confirm `$env:<VARIABLE>` equals the exact printed value; skip verification for any variable printed as `(not set)`. If a mismatch is found, do not terminate — set `$env:<VARIABLE>` to the printed value so the environment matches the script's resolved configuration before proceeding.**
+During processing of this skill, the parent context invokes `resolve-config.ps1` **once**. Do not invoke it again in the parent context or in a fix agent. **DO NOT set any environmental variable** unless it is already set up. The script will set all required environment variables. If any required variable is missing or invalid, the script prints a descriptive error message and exits with a non-zero code. If the script exits with an error, print `ERROR: Configuration error - [error message from script]` and terminate skill immediately with non-zero exit code. **After the script returns, verify that the current environment actually matches what it printed: for every `Resolved configuration` line whose value is not `(not set)`, confirm `$env:<VARIABLE>` equals the exact printed value; skip verification for any variable printed as `(not set)`. If a mismatch is found, do not terminate — set `$env:<VARIABLE>` to the printed value so the environment matches the script's resolved configuration before proceeding.**
 
 **For all subsequent steps**, keep the environment consistent with the previous step. Variables resolved and set by `resolve-config.ps1` in Step 1 are available and should not be modified unless specified.
 
@@ -206,7 +208,7 @@ $branch = $env:FIXES_BRANCH_NAME -replace '\[timestamp\]', (Get-Date -Format 'yy
 git checkout -b $branch 2>$null; if ($LASTEXITCODE -ne 0) { git checkout $branch }
 ```
 
-If `FIXES_BRANCH_NAME` is empty or `DOTTEST_COMMIT_FIXES` is not `true`, commit directly to the currently checked-out branch without creating or switching to any new branch.
+If `DOTTEST_COMMIT_FIXES` is not `true`, do not create or switch branches and do not commit. If commits are enabled but `FIXES_BRANCH_NAME` is empty, commit each verified fix directly to the currently checked-out branch.
 
 #### Classifying Violations
 
@@ -216,7 +218,8 @@ If `FIXES_BRANCH_NAME` is empty or `DOTTEST_COMMIT_FIXES` is not `true`, commit 
 #### Effective Fix Limit
 
 - Inspect the user's natural-language request for an explicit numeric fix limit (e.g. "fix 3 violations", "apply at most 5 fixes"). If found, use that number as the effective limit.
-- Otherwise, use `DOTTEST_STATIC_NO_OF_MAX_FIXES` (default `5`) as the effective limit.
+- If the request has no explicit numeric limit and `DOTTEST_STATIC_NO_OF_MAX_FIXES` is `ALL`, process all remaining eligible violations without a numeric limit.
+- Otherwise, use `DOTTEST_STATIC_NO_OF_MAX_FIXES` (default `5`) as the numeric effective limit.
 - Initialize a `successful_fixes` counter to `0`.
 
 #### Invoking the Agent
@@ -284,13 +287,13 @@ The `environment` object must be identical in the single and batch payloads. Do 
 }
 ```
 
-The agent performs all fix, verification, retry, and optional commit logic autonomously. The agent runs `resolve-config.ps1` in its terminal session, restores the complete `environment` object using `verify-environment.ps1`, and must stop on a verification failure before running `verify.ps1` or `dottest-analyze.ps1`.
+The agent performs all fix, verification, retry, and optional commit logic autonomously. It receives the complete `environment` object from the parent context and restores it using `verify-environment.ps1`; it does **not** run `resolve-config.ps1`. It must stop on an environment verification failure before running `verify.ps1` or `dottest-analyze.ps1`.
 
 #### Collecting Results
 
 Parse the `FIX_RESULT=` JSON line from the agent's output. Update counters:
 
-- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. If `successful_fixes` ≥ `$env:DOTTEST_STATIC_NO_OF_MAX_FIXES` (unless all violations must be fixed), print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7.
+- If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. When the effective limit is numeric and `successful_fixes` is greater than or equal to it, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7. For `ALL`, do not perform a numeric limit comparison.
 - If `status` is `"FAILURE"`: record the failure and move on to the next violation.
 
 #### Processing Order
