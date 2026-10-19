@@ -49,7 +49,7 @@ All settings are read exclusively from environment variables. No interactive pro
 | `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` | Absolute path to a base `report.xml` file from static analysis matching test configuration in `DOTTEST_TEST_CONFIGURATION`. When not set, Step 3 runs analysis to create the baseline. |
 | `DOTTEST_BASE_UNIT_TEST_REPORT` | Absolute path to a base `report.xml` file. When both `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, Step 2 only verifies the build (no test run), and Step 7 uses Test Impact Analysis (TIA). When not set, Step 2 runs tests with coverage to create the baseline. |
 | `DOTTEST_BASE_UNIT_TEST_COVERAGE` | Absolute path to a base `coverage.xml` file. When both `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` are set, Step 2 only verifies the build (no test run), and Step 7 uses Test Impact Analysis (TIA). When not set, Step 2 runs tests with coverage to create the baseline. |
-| `DISABLE_UNIT_TEST_VERIFICATION` | Set to `true` to skip unit-test execution during Step 2. The current fix agent cannot safely complete fix verification in this mode, so Step 6 stops before starting fixes. Defaults to `false`. |
+| `DISABLE_UNIT_TEST_VERIFICATION` | Set to `true` to skip unit test execution during verification step. Useful when unit tests are slow or unavailable. Defaults to `false`. |
 | `DISABLE_INITIAL_BUILD` | Set to `true` to skip the initial build only when Step 2 is already in build-only mode (`DISABLE_UNIT_TEST_VERIFICATION=true` or both unit-test baseline files are provided). It does not skip the build/test work performed after a fix. Defaults to `false`. |
 | `FIXES_BRANCH_NAME` | Name of the branch to create and switch to before committing fixes. Supports `[timestamp]` pattern (e.g. `my-fixes-[timestamp]`), which is replaced with the current date-time. If not set, commits are applied directly to the currently checked-out branch without creating a new branch. |
 | `DOTTEST_STATIC_NO_OF_MAX_FIXES` | Maximum number of violations to fix. Defaults to `5` if not set, unless user prompt explicitly specifies a different number (e.g. "fix up to 3 violations in file ABC.cs"). If set to `ALL` then every violation will be fixed. |
@@ -68,9 +68,7 @@ The scripts and the `dottest-fix-violation` agent named above are runtime depend
 
 **If all violations have been fixed or are suppressed, do NOT rerun analysis under different conditions (e.g. a different test configuration, different scope, or different filter). Assume all work is done, stop immediately with success status and message: "No violations were found for the given scope".**
 
-**Never suppress a violation.** This prohibition applies even when a violation appears to be a false positive. If no valid source-code fix can be established, report that violation as a failure and do not add or alter a suppression comment.
-
-**When `DOTTEST_COMMIT_FIXES=true`, each successful fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. When `DOTTEST_COMMIT_FIXES` is not `true`, do not create commits; leave successful fixes as local changes. Commit logic is handled by the `dottest-fix-violation` custom subagent.
+**When `DOTTEST_COMMIT_FIXES=true`, each successful fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. When `DOTTEST_COMMIT_FIXES` is not `true`, do not create commits; leave successful fixes as local changes. Commit logic is handled by the `dottest-fix-violation` subagent.
 
 **If no `report.xml` with analysis results is provided or referenced at the start of execution, the skill MUST always run the full dotTEST analysis first (Step 3) to produce the report before attempting to identify or fix any violations.** Never skip straight to fixing violations without a freshly generated or explicitly provided report. The report obtained in Step 3 is the mandatory input for Steps 4-6. **If any XML report (provided by `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT` or created by Step 3) is about to be read, then always use `dottestmcp` MCP tool. **
 
@@ -129,7 +127,7 @@ If **no scope-limiting language** is present, set `DOTTEST_INCLUDE` and `DOTTEST
 
 ### Step 2: Verify Build and Tests
 
-`verify.ps1` requires `DOTTEST_BASELINE_MODE` to be explicitly set. First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)` to restore and verify the exact current environment object, including its current baseline values. If verification fails, terminate immediately; do not rerun `resolve-config.ps1`. After it succeeds, set `DOTTEST_BASELINE_MODE=true` and invoke `verify.ps1`; this selects initial verification behavior. Keep the mode `true` through Step 2. Set it to `true` again immediately before invoking `dottest-analyze.ps1` in Step 3. The scripts fail if the variable is missing or is not `true` or `false`.
+First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)` to restore and verify the exact current environment object, including its current baseline values. After that invoke `verify.ps1`; this selects initial verification behavior. `verify.ps1` requires `DOTTEST_BASELINE_MODE` to be explicitly set to `true`. Keep the mode `true` through Step 2. The scripts fail if the variable is missing or is not `true` or is `false`.
 
 **Verify the solution builds and unit tests pass.** The verification behavior depends on whether baseline files are provided and the `DISABLE_UNIT_TEST_VERIFICATION` setting:
 
@@ -159,9 +157,9 @@ After `verify.ps1` completes successfully, update the `$environment` object and 
 
 ### Step 3: Run dotTEST Analysis
 
-First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This must succeed before analysis starts; do not rerun `resolve-config.ps1`. Then set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated scope patterns derived from the user's request in Step 1, or to empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` immediately before invoking `dottest-analyze.ps1`. The script requires this value explicitly and fails if the mode is missing or invalid.
+First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This must succeed before analysis starts. Then set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated scope patterns derived from the user's request in Step 1, or to empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` immediately before invoking `dottest-analyze.ps1`. The script requires this value explicitly and fails if the mode is missing or invalid.
 
-Always invoke `dottest-analyze.ps1` in this step. If `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` was provided in the initial configuration, the script returns that same path in `SA_REPORT_XML=` and skips static analysis; it does not copy the report to the canonical output directory. The configured report must match `DOTTEST_TEST_CONFIGURATION`. `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` do not alter a reused report; apply them to the violation source-file paths returned by MCP in Step 5. If `DOTTEST_REFERENCE_BRANCH` is set, the reused report must already represent analysis against that reference branch; otherwise stop with a configuration error. If no static-analysis baseline was provided, the script runs analysis to create one under `OUTPUT_DIR`. In either case, it must exit with code `0` on success and a non-zero code on failure, and print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success. The emitted path identifies the report to use in subsequent steps.
+Always invoke `dottest-analyze.ps1` in this step. If `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` was provided in the initial configuration, the script returns that same path in `SA_REPORT_XML=` and skips static analysis; it does not copy the report to the canonical output directory. If no static-analysis baseline was provided, the script runs analysis to create one under `OUTPUT_DIR`. In either case, it must exit with code `0` on success and a non-zero code on failure, and print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success. The emitted path identifies the report to use in subsequent steps.
 
 The selected baseline report must be available before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected report path in its JSON payload and uses it as its reference report.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
@@ -196,11 +194,11 @@ If no violations remain after suppression, severity, rule, and scope filtering, 
 
 ### Step 6: Fix, Verify, and Commit — Delegate to `dottest-fix-violation` Agent
 
-Set `DOTTEST_BASELINE_MODE=false` in the environment snapshot before spawning the `dottest-fix-violation` agent. The fix agent must run in fix mode, not baseline mode; the scripts reject a missing or invalid mode value.
-
-Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
+**Set `DOTTEST_BASELINE_MODE=false` in the environment snapshot** before spawning the `dottest-fix-violation` agent. The fix agent must run in fix mode, not baseline mode; the scripts reject a missing or invalid mode value.
 
 Before the first fix-agent invocation, confirm that the solution is inside a Git worktree, that `git diff --quiet` and `git diff --cached --quiet` both succeed, and that every target source file is tracked by Git. If any check fails, stop without invoking the agent. Do not require a completely empty `git status`: reports and logs under `OUTPUT_DIR` may be untracked, and `git checkout -- .` does not remove untracked files. The current fix agent reverts with `git checkout -- .` after verification failure, so it must not run while user changes or earlier uncommitted fixes to tracked files are present. When `DOTTEST_COMMIT_FIXES` is not `true`, process at most one agent invocation (one complex violation or one same-file simple batch) per skill run, then proceed to the summary. This prevents a later failed invocation from discarding an earlier successful uncommitted fix.
+
+Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
 
 The current fix agent always expects `UT_REPORT_XML` after `verify.ps1`, but `verify.ps1` does not emit that marker when `DISABLE_UNIT_TEST_VERIFICATION=true`. Until the agent is updated to support build-only verification, if this setting is `true`, stop before spawning it and report that fix verification cannot safely complete in this mode. Do not claim the fix was verified.
 
@@ -213,12 +211,13 @@ $branch = $env:FIXES_BRANCH_NAME -replace '\[timestamp\]', (Get-Date -Format 'yy
 git checkout -b $branch 2>$null; if ($LASTEXITCODE -ne 0) { git checkout $branch }
 ```
 
+If `DOTTEST_COMMIT_FIXES=true` and `FIXES_BRANCH_NAME` is not set, commit each verified fix directly to the currently checked-out branch.
+
 If `DOTTEST_COMMIT_FIXES` is not `true`, do not create or switch branches and do not commit. If commits are enabled but `FIXES_BRANCH_NAME` is empty, commit each verified fix directly to the currently checked-out branch.
 
 #### Classifying Violations
 
-- **Simple violations** (formatting, whitespace, unnecessary casts, unused imports) where the fix is purely mechanical and does not change logic — when `DOTTEST_COMMIT_FIXES` is not `true`, group eligible violations for the **same file** into a single batch, pre-sorted by line number descending and never exceeding the remaining fix limit.
-- When `DOTTEST_COMMIT_FIXES=true`, process each violation in its own agent invocation. Do not use batch mode, because the agent creates one commit per invocation.
+- **Simple violations** (formatting, whitespace, unnecessary casts, unused imports) where the fix is purely mechanical and does not change logic — group all such violations for the **same file** into a single batch, pre-sorted by line number descending.
 - **All other violations** (logic changes, null checks, resource handling, exception handling, API changes) — process exactly one at a time.
 
 #### Effective Fix Limit
