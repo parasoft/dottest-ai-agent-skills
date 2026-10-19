@@ -49,17 +49,14 @@ if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
 # ---------------------------------------------------------------------------
 $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST_VERIFICATION -eq "true")
 $hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
-if ($env:DOTTEST_BASELINE_MODE -notin @("true", "false")) {
-    Write-Error "ERROR: DOTTEST_BASELINE_MODE must be explicitly set to 'true' or 'false'."
-    exit 1
-}
 $isBaselineMode = ($env:DOTTEST_BASELINE_MODE -eq "true")
+$disableInitialBuild = ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true")
 $isFixVerification = -not $isBaselineMode
 
 $buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
 
 if ($buildOnlyMode) {
-    if ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true") {
+    if ($disableInitialBuild) {
         Write-Output "[verify] DISABLE_INITIAL_BUILD is set to true. Skipping build verification."
         Write-Output "BUILD_PERFORMED=false"
         exit 0
@@ -163,6 +160,10 @@ if ($buildOnlyMode) {
         $builderValue = $builderMap[$env:DOTTEST_BUILDER.ToUpper()]
         $argList += @("-property", "dottest.build.builder_id=$builderValue")
         Write-Output "[verify] Using builder: $builderValue"
+    }
+
+    if ($isBaselineMode -and $disableInitialBuild) {
+        $argList += @("-nobuild")
     }
 
     #if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
