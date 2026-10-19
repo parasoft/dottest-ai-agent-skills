@@ -178,6 +178,7 @@ Call the MCP tool `get_violations_from_report_file` with `DOTTEST_BASE_STATIC_AN
 - Track violation line shifts across fixes in memory during the current run; do not create tracking files.
 - Paths to code files between `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` and the local repository may differ; find the best match yourself.
 - **Immediately discard any violation whose `suppressed` field is `true`. Suppressed violations must never be fixed or committed.**
+- **Use flow-analysis data when present:** violations that include `cause_file`, `cause_line`, or `path_elements` are flow-analysis violations; ordinary violations may not include these fields. Inspect the complete `path_elements` path and prefer fixing the reported cause (`cause_file`/`cause_line`) rather than the final reported location. The cause may be in another method, class, or module. Identify violations with a shared cause and prefer one verified root-cause fix; do not separately fix related violations that the fix resolves.
 - **If there are no violations, stop immediately with success: "No violations were found for the given scope".**
 
 ### Step 5: Filter and Prioritize
@@ -281,6 +282,36 @@ The `environment` object must be identical in the single and batch payloads. Do 
   }
 }
 ```
+
+For flow-analysis violations, also pass the optional `cause_file`, `cause_line`, and `path_elements` fields exactly as returned by `get_violations_from_report_file`; omit them for violations where they are absent.
+
+**Single (complex) flow analysis violation:**
+```json
+{
+  "mode": "single",
+  "scriptDir": "<absolute path to the scripts directory of this skill>",
+  "environment": { "...": "the complete environment object above" },
+  "violation": {
+    "ruleId": "<rule_id>",
+    "sourceFile": "<absolute_path>",
+    "lineNumber": <line>,
+    "message": "<message>",
+    "severity": <severity>,
+    "cause_file": "C:\\MySolution\\MyProject\\CauseFile.cs",
+    "cause_line": 18,
+    "path_elements": [
+      {
+        "description": "value = source.getValue();",
+        "file": "C:\\MySolution\\MyProject\\AnotherCauseFile.cs",
+        "line": 18,
+        "annotations": ["Source of value"]
+      }
+    ]
+  }
+}
+```
+
+
 
 **Batch (simple) violations — same file, pre-sorted line-descending:**
 ```json
