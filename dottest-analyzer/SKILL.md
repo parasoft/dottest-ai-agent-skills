@@ -68,9 +68,11 @@ The scripts and the `dottest-fix-violation` agent named above are runtime depend
 
 **If all violations have been fixed or are suppressed, do NOT rerun analysis under different conditions (e.g. a different test configuration, different scope, or different filter). Assume all work is done, stop immediately with success status and message: "No violations were found for the given scope".**
 
+**Equivalent (duplicate) violations MUST be collapsed before planning fixes.** Violations with the same source location and same message (even when reported under different standard-mapped rule IDs such as CWE/OWASP/APSC_DV variants) represent one underlying issue and must be processed as a single fix unit.
+
 **When `DOTTEST_COMMIT_FIXES=true`, each successful fix must be committed in its own separate git commit.** Never batch multiple violation fixes into a single commit. A commit must be created immediately after a fix is successfully verified, and before processing the next violation. Each commit must contain changes for exactly one violation only. When `DOTTEST_COMMIT_FIXES` is not `true`, do not create commits; leave successful fixes as local changes. Commit logic is handled by the `dottest-fix-violation` subagent.
 
-**If no `report.xml` with analysis results is provided or referenced at the start of execution, the skill MUST always run the full dotTEST analysis first (Step 3) to produce the report before attempting to identify or fix any violations.** Never skip straight to fixing violations without a freshly generated or explicitly provided report. The report obtained in Step 3 is the mandatory input for Steps 4-6. **If any XML report (provided by `DOTTEST_BASE_STATIC_ANALYSIS_REPORT`, `DOTTEST_BASE_UNIT_TEST_REPORT` or created by Step 3) is about to be read, then always use `dottestmcp` MCP tool. **
+**If no `report.xml` with analysis results is provided (via `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` or `DOTTEST_BASE_UNIT_TEST_REPORT`) at the start of execution, the agent MUST NOT search for, locate, or reuse any pre-existing report. In such cases, the skill MUST always run the full dotTEST analysis first (Step 3) to produce the report before attempting to identify or fix any violations.** Never skip straight to fixing violations without a freshly generated or explicitly provided report. The report obtained in Step 3 is the mandatory input for Step 6. **If any XML baseline report is about to be read, then always use `dottestmcp` MCP tool.**
 
 ## How This Skill Works
 
@@ -159,7 +161,7 @@ After `verify.ps1` completes successfully, update the `$environment` object and 
 
 First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | ConvertTo-Json -Compress)`. This must succeed before analysis starts. Then set `DOTTEST_INCLUDE` and `DOTTEST_EXCLUDE` to the semicolon-separated scope patterns derived from the user's request in Step 1, or to empty strings if no scope was requested. Set `DOTTEST_BASELINE_MODE=true` immediately before invoking `dottest-analyze.ps1`. The script requires this value explicitly and fails if the mode is missing or invalid.
 
-Always invoke `dottest-analyze.ps1` in this step. If `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` was provided in the initial configuration, the script returns that same path in `SA_REPORT_XML=` and skips static analysis; it does not copy the report to the canonical output directory. If no static-analysis baseline was provided, the script runs analysis to create one under `OUTPUT_DIR`. In either case, it must exit with code `0` on success and a non-zero code on failure, and print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success. The emitted path identifies the report to use in subsequent steps.
+Always invoke `dottest-analyze.ps1` in this step. If `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` was provided in the initial configuration, the script returns that same path in `SA_REPORT_XML=` and skips static analysis; it does not copy the report to the canonical output directory. If no static-analysis baseline was provided, the script runs analysis to create one under `OUTPUT_DIR`. **Do NOT search for, open, or use any existing `report.xml` or similar file found anywhere in the project or filesystem.** The agent MUST run the `dottest-analyze.ps1` script to produce a fresh report. In either case, the script must exit with code `0` on success and a non-zero code on failure, and print `SA_REPORT_XML=<absolute_path>` as its **last stdout line** on success. The emitted path identifies the report to use in subsequent steps.
 
 The selected baseline report must be available before any `dottest-fix-violation` agent is spawned. A fix agent never creates a baseline; it receives the selected report path in its JSON payload and uses it as its reference report.
 **If the script fails (non-zero exit code)**: print `ERROR: dotTEST analysis exited with code [N]. See output above for details.` and terminate immediately.
@@ -178,17 +180,20 @@ Call the MCP tool `get_violations_from_report_file` with `DOTTEST_BASE_STATIC_AN
 - Track violation line shifts across fixes in memory during the current run; do not create tracking files.
 - Paths to code files between `DOTTEST_BASE_STATIC_ANALYSIS_REPORT` and the local repository may differ; find the best match yourself.
 - **Immediately discard any violation whose `suppressed` field is `true`. Suppressed violations must never be fixed or committed.**
+- **Build equivalence groups before planning fixes:** group violations by `(normalized source file path, line number, message)`. Treat each group as one fix candidate; keep one representative violation and store the rest as `equivalentViolationIds`.
+- **Use flow-analysis data when present:** violations that include `cause_file`, `cause_line`, or `path_elements` are flow-analysis violations; ordinary violations may not include these fields. Inspect the complete `path_elements` path and prefer fixing the reported cause (`cause_file`/`cause_line`) rather than the final reported location. The cause may be in another method, class, or module. Identify violations with a shared cause and prefer one verified root-cause fix; do not separately fix related violations that the fix resolves.
 - **If there are no violations, stop immediately with success: "No violations were found for the given scope".**
 
 ### Step 5: Filter and Prioritize
 
 Process violations in this deterministic order:
-1. Exclude all violations where `suppressed` is `true`.
-2. Apply the requested severity selection, if any. For example, "severity-1 violations" means severity exactly `1`.
+1. Exclude all violations where `suppressed` is `true`. These are intentionally silenced by the project team and must not be touched.
+2. **Collapse equivalents**: from the remaining list, build one fix unit per equivalence group (`source file + line + message`) and carry all grouped IDs as metadata for reporting.
 3. If the user explicitly names rule IDs in the prompt, use those IDs as the effective rule filter; otherwise use `DOTTEST_FILTER_RULE` when set. The explicit user request takes precedence over the configured value.
-4. Apply the requested file, project, or directory scope to the reported source-file paths using the Ant-style patterns described in [Resolve Analysis Scope](#resolve-analysis-scope). When a configured static-analysis report is reused, this filters the returned violations; it does not rerun analysis or change the report.
-5. Sort all remaining violations by severity (1 first, then 2 through 5), file path alphabetically, and line number ascending. Always sort after filtering, including when `DOTTEST_FILTER_RULE` is set.
-6. Process violations in this sorted order, respecting the effective fix limit.
+4. Apply the requested severity selection, if any. For example, "severity-1 violations" means severity exactly `1`.
+5. Apply the requested file, project, or directory scope to the reported source-file paths using the Ant-style patterns described in [Resolve Analysis Scope](#resolve-analysis-scope). When a configured static-analysis report is reused, this filters the returned violations; it does not rerun analysis or change the report.
+6. Sort all remaining violations by severity (1 first, then 2 through 5), file path alphabetically, and line number descending. This bottom-to-top ordering within each file ensures that fixing a violation does not shift the line numbers of violations yet to be processed in the same file.
+7. Process violations in this sorted order, respecting the effective fix limit.
 
 If no violations remain after suppression, severity, rule, and scope filtering, stop successfully with the message `No violations were found for the given scope`. Do not start a fix agent or rerun analysis with different filters.
 
@@ -278,9 +283,41 @@ The `environment` object must be identical in the single and batch payloads. Do 
     "lineNumber": <line>,
     "message": "<message>",
     "severity": <severity>
-  }
+  },
+  "equivalentViolationIds": ["<id1>", "<id2>"]
 }
 ```
+
+For flow-analysis violations, also pass the optional `cause_file`, `cause_line`, and `path_elements` fields exactly as returned by `get_violations_from_report_file`; omit them for violations where they are absent.
+
+**Single (complex) flow analysis violation:**
+```json
+{
+  "mode": "single",
+  "scriptDir": "<absolute path to the scripts directory of this skill>",
+  "environment": { "...": "the complete environment object above" },
+  "violation": {
+    "ruleId": "<rule_id>",
+    "sourceFile": "<absolute_path>",
+    "lineNumber": <line>,
+    "message": "<message>",
+    "severity": <severity>,
+    "cause_file": "C:\\MySolution\\MyProject\\CauseFile.cs",
+    "cause_line": 18,
+    "path_elements": [
+      {
+        "description": "value = source.getValue();",
+        "file": "C:\\MySolution\\MyProject\\AnotherCauseFile.cs",
+        "line": 18,
+        "annotations": ["Source of value"]
+      }
+    ]
+  },
+  "equivalentViolationIds": ["<id1>", "<id2>"]
+}
+```
+
+
 
 **Batch (simple) violations — same file, pre-sorted line-descending:**
 ```json
@@ -288,7 +325,8 @@ The `environment` object must be identical in the single and batch payloads. Do 
   "mode": "batch",
   "scriptDir": "<absolute path to the scripts directory of this skill>",
   "environment": { "...": "the complete environment object above" },
-  "violations": [ ... ]
+  "violations": [ ... ],
+  "equivalentViolationIds": ["<id1>", "<id2>"]
 }
 ```
 
@@ -300,6 +338,7 @@ Parse the `FIX_RESULT=` JSON line from the agent's output. Update counters:
 
 - If `status` is `"SUCCESS"`: increment `successful_fixes` by `violationsFixed`. When the effective limit is numeric and `successful_fixes` is greater than or equal to it, print `Fix limit of [N] reached. Proceeding to summary.` and proceed immediately to Step 7. For `ALL`, do not perform a numeric limit comparison.
 - If `status` is `"FAILURE"`: record the failure. When `DOTTEST_COMMIT_FIXES=true`, move on to the next violation. Otherwise, proceed immediately to the summary; do not invoke another agent in this run.
+- For reporting, a successful fix of one representative is expected to remove its equivalent violations in the same group; do not enqueue those equivalents as separate follow-up work.
 
 #### Processing Order
 
@@ -311,6 +350,7 @@ Report:
 - Total fixes attempted
 - Successful fixes
 - Failures
+- Equivalent violation IDs covered by each successful fix (optional, for traceability)
 - Files with uncommitted local changes (if committing was not requested)
 - Successful commits (if committing was requested)
 

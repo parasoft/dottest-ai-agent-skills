@@ -31,7 +31,8 @@ Example JSON payload, by mode:
     "lineNumber": 42,
     "message": "Array index may be out of bounds",
     "severity": 1
-  }
+  },
+  "equivalentViolationIds": ["CWE.119.ARRAY", "OWASP2023.API10.ARRAY"]
 }
 ```
 
@@ -54,9 +55,20 @@ Example JSON payload, by mode:
       "sourceFile": "C:\\MySolution\\MyProject\\Bar.cs",
       "lineNumber": 55,
       "message": "Unused using directive",
-      "severity": 2
+      "severity": 2,
+      "cause_file": "C:\\MySolution\\MyProject\\CauseFile.cs",
+      "cause_line": 18,
+      "path_elements": [
+        {
+          "description": "value = source.getValue();",
+          "file": "C:\\MySolution\\MyProject\\AnotherCauseFile.cs",
+          "line": 18,
+          "annotations": ["Source of value"]
+        }
+      ]
     }
-  ]
+  ],
+  "equivalentViolationIds": ["CWE.119.ARRAY", "OWASP2023.API10.ARRAY"]
 }
 ```
 
@@ -93,7 +105,9 @@ Extract and set:
 - `mode` (`single` or `batch`)
 - `scriptDir` → store for use in script calls
 - `environment` → the complete environment snapshot supplied by the parent.
-- Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`
+- Violation(s): `ruleId`, `sourceFile`, `lineNumber`, `message`, `severity`; optionally `cause_file`, `cause_line`, and `path_elements` for flow-analysis violations
+
+`equivalentViolationIds` contains alternate rule IDs for the same underlying violation at the same source location and with the same message. Treat these IDs as one fix unit: apply one fix to the representative violation, do not make separate edits or verification attempts for each equivalent ID, and include all equivalent IDs when confirming that the violation was resolved. If the representative fix resolves the finding for every equivalent ID, report the whole group as fixed once.
 
 Immediately after resolving configuration, restore every property from `workItem.environment` using the provided `verify-environment.ps1` script:
 
@@ -128,14 +142,16 @@ For each unique `ruleId`, call MCP tool `get_rule_documentation` with the exact 
 
 ### Step 3: Read Source File
 
-Read the entire source file containing the violation(s).
+Read the entire source file containing the violation(s), plus files referenced by `cause_file` or `path_elements` for flow-analysis violations.
 
 ### Step 4: Generate and Apply Fix
 
 **Generate a minimal fix** — change only the lines necessary to resolve the violation(s). Do not refactor, rename, or restructure surrounding code.
 
 - **Single mode**: fix exactly the one violation.
+- For violations with flow-analysis fields, inspect the full `path_elements` path and fix the root cause at `cause_file`/`cause_line` when possible, even if it is in another method, class, or module. Do not patch only the reported endpoint when the cause can be corrected directly.
 - **Batch mode**: fix all violations in the batch, working bottom-to-top (highest line number first).
+- If `equivalentViolationIds` is present, it identifies duplicate standard mappings of the same violation, not additional violations. Fix and count that group once.
 
 Apply the change using the edit tool. Do not rewrite the entire file.
 
@@ -194,7 +210,7 @@ Interpret exit codes:
 Parse the `SA_REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1` in Step 6. If no `SA_REPORT_XML=` line was emitted or the script exited non-zero: **FAILURE**.
 
 Additionally:
-- Use MCP tool `get_violations_from_report_file` on the generated report to confirm whether the specific violation(s) have been resolved.
+- Use MCP tool `get_violations_from_report_file` on the generated report to confirm whether the representative violation and every ID in `equivalentViolationIds` have been resolved. Do not treat equivalent IDs that disappeared with the representative as separate fixes.
 - If any **new** violations were introduced by the fix (determined by checking the `new="true"` attribute in the MCP tool result): this is a **FAILURE**.
 - Extract all setup problems from `SA_REPORT_XML` (node: `SetupProblems/Problem`). If any new ones (compared to baseline) or any related to build/compilation are found: **FAILURE**.
 - Check that at least ONE FILE has been analyzed. Otherwise: **FAILURE**.
