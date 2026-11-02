@@ -146,16 +146,19 @@ First invoke `scripts/verify-environment.ps1 -ExpectedJson ($environment | Conve
 - The script only verifies that the solution builds successfully. Do not call `dotnet`, `devenv`, or `msbuild` directly from the skill; always run `scripts/verify.ps1` and let the script choose the builder.
 - No tests are run during initial verification (tests will run with TIA during fix verification in Step 6.5)
 
+**If no unit tests were discovered during the verification this step should print a warning indicating that no tests were found, but it should not treat this as a failure.**
+
 Call the `verify.ps1` script from `scripts` directory. The following environment variables are already set and are available to the script: `DOTTEST_HOME`, `SOLUTION_PATH`, `OUTPUT_DIR`, `DOTTEST_SETTINGS`, `DOTTEST_BASE_UNIT_TEST_REPORT`, `DOTTEST_BASE_UNIT_TEST_COVERAGE`, `DISABLE_UNIT_TEST_VERIFICATION`, `DISABLE_INITIAL_BUILD`, `DOTTEST_BUILDER`.
 
 The script **must** exit with code `0` on success and a non-zero code on failure.
 
 **If the script fails (non-zero exit code)**: print `ERROR: Solution build or unit tests failed. Fix compilation errors or failing tests before running analysis.` followed by the script output, and terminate immediately.
 
-**If `verify` executed unit tests, parse the `UT_REPORT_XML=` value from the last stdout line. If tests were expected but no `UT_REPORT_XML=` line was emitted: FAILURE. If `verify` ran in build-only mode, do not require `UT_REPORT_XML` in Step 2.**
-If unit tests were executed, check that there are no unit test failures in the `UT_REPORT_XML` file. If there are any then print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately.
+Check the exit code immediately and retain only the emitted baseline paths and optional `UT_REPORT_XML=` path from this invocation's stdout, not the complete output. If `UT_REPORT_XML` identifies an existing report, use MCP tools to check for unit test failures before proceeding to Step 3. If there are any, print `ERROR: Unit tests failed. Fix failing tests before running analysis.` followed by the list of failed tests, and terminate immediately. A report showing no tests should produce a warning, not a failure.
 
-After `verify.ps1` completes successfully, update the `$environment` object and its JSON representation from the current process values. If both unit-test baseline variables were empty when the object was first created and `verify.ps1` generated baselines, update `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` to the paths emitted by `verify.ps1`. If unit-test baselines were present in the initial object, leave them unchanged and do not treat the existing canonical files as newly generated. The updated JSON is passed to Step 3 and later to subagents.
+If no unit-test report was produced (the marker is absent or its path does not exist), a successful script exit is sufficient. Print a warning that no unit-test report was produced, then continue to Step 3, even when `DISABLE_UNIT_TEST_VERIFICATION=false`. Do not claim unit tests passed or infer that no tests exist solely from the missing report. Do not search for or reuse reports from earlier runs. Building is the responsibility of `verify.ps1`, not `dottest-analyze.ps1`. The only exception is an explicitly skipped initial build when `DISABLE_INITIAL_BUILD=true` and Step 2 is in build-only mode, for solutions already built by the caller. This exception never applies to post-fix verification or initial verification that runs tests.
+
+After `verify.ps1` completes successfully, update the `$environment` object and its JSON representation from the current process values. If both unit-test baseline variables were empty when the object was first created and `verify.ps1` generated both baseline files, update `DOTTEST_BASE_UNIT_TEST_REPORT` and `DOTTEST_BASE_UNIT_TEST_COVERAGE` to the paths emitted by `verify.ps1`. Otherwise, keep both variables empty; do not pass nonexistent or incomplete baseline paths to later steps. If unit-test baselines were present in the initial object, leave them unchanged and do not treat the existing canonical files as newly generated. The updated JSON is passed to Step 3 and later to subagents.
 
 ### Step 3: Run dotTEST Analysis
 
@@ -204,8 +207,6 @@ If no violations remain after suppression, severity, rule, and scope filtering, 
 Before the first fix-agent invocation, confirm that the solution is inside a Git worktree, that `git diff --quiet` and `git diff --cached --quiet` both succeed, and that every target source file is tracked by Git. If any check fails, stop without invoking the agent. Do not require a completely empty `git status`: reports and logs under `OUTPUT_DIR` may be untracked, and `git checkout -- .` does not remove untracked files. The current fix agent reverts with `git checkout -- .` after verification failure, so it must not run while user changes or earlier uncommitted fixes to tracked files are present. When `DOTTEST_COMMIT_FIXES` is not `true`, process at most one agent invocation (one complex violation or one same-file simple batch) per skill run, then proceed to the summary. This prevents a later failed invocation from discarding an earlier successful uncommitted fix.
 
 Each fix-verify-commit cycle runs in a **separate agent context** to keep the parent conversation lean. **DO NOT attempt to fix, verify, or commit violations directly in the parent context**. Instead, spawn a new agent for each violation (or batch of simple violations) and pass all required context in a JSON payload. The agent runs autonomously and returns a JSON result to the parent.
-
-The current fix agent always expects `UT_REPORT_XML` after `verify.ps1`, but `verify.ps1` does not emit that marker when `DISABLE_UNIT_TEST_VERIFICATION=true`. Until the agent is updated to support build-only verification, if this setting is `true`, stop before spawning it and report that fix verification cannot safely complete in this mode. Do not claim the fix was verified.
 
 #### Branch Setup (once, before the fix loop)
 

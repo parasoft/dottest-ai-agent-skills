@@ -77,6 +77,8 @@ Before installing the integration:
 3. The machine running the agent must have access to the dotTEST installation directory.
 4. **PowerShell** must be installed and the execution policy for the running user set to `AllSigned` or `RemoteSigned`.
 
+Solutions without unit tests can continue through analysis and fixing. Verification checks the script exit code immediately and checks any unit-test report before static analysis starts. A successful exit without a unit-test report is accepted with a warning; test failures still stop the workflow. Only emitted report/baseline paths need to be retained, not the complete verification output. Building belongs to `verify.ps1`; `dottest-analyze.ps1` always uses `-nobuild`. An explicitly skipped initial build is allowed only in initial build-only mode for solutions already built by the caller, never after a fix or when running tests. Static-analysis reports remain mandatory.
+
 ### Installation
 
 #### Step 1 — Register the dotTEST MCP server

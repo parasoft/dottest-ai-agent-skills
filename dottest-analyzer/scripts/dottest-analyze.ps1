@@ -185,10 +185,7 @@ if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
     $argList += @("-property", "scope.scontrol.ref.branch=$($env:DOTTEST_REFERENCE_BRANCH)")
 }
 
-# verify.ps1 may already have built the solution, either through a configured
-# builder or through dottestcli while running tests. Avoid performing the same
-# build again. If verification was skipped, leave this unset/false so analysis
-# performs the required build itself.
+# Building belongs to verify.ps1 (or the caller when the initial build is explicitly skipped).
 $argList += @("-nobuild")
 
 

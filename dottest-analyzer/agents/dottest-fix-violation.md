@@ -159,7 +159,7 @@ Apply the change using the edit tool. Do not rewrite the entire file.
 
 ### Step 5: Verify — Build and Tests
 
-**If `disableUnitTestVerification` is `true`, skip this step entirely and proceed to Step 6.**
+**Always run this step.** When `environment.DISABLE_UNIT_TEST_VERIFICATION` is `"true"`, `verify.ps1` verifies only the build; do not skip build verification.
 
 **Run this guard command before calling the script — do not call `verify.ps1` if it throws:**
 
@@ -172,19 +172,15 @@ if ($env:DOTTEST_BASELINE_MODE -ne "false") {
 }
 ```
 
-Run the script directly: `& "<scriptDir>\verify.ps1"`
+Run the script directly: `& "<scriptDir>\verify.ps1"`. Check its exit code immediately. Retain only the optional `UT_REPORT_XML=` path from this invocation's stdout, not the complete output.
 
-If the script fails (non-zero exit code): this is a **FAILURE**.
+**If no unit tests were discovered during the verification this step should print a warning indicating that no tests were found, but it should not treat this as a failure.**
 
-Parse the `UT_REPORT_XML=` value from the last stdout line.
+If the script fails (non-zero exit code): this is a **FAILURE**. Go directly to Step 8 failure handling; do not run Step 6.
 
-**Normalize the build output into `build_output.log`:**
-- `verify.ps1` runs unit tests through `dottestcli.exe` when tests are actually executed; that run writes a combined build+test capture file named `dottestcli_output-<timestamp>.txt` in the same directory as `UT_REPORT_XML`. If such a file exists there, extract build output from the most recent one to `build_output.log` (overwrite if present) next to the other files.
-- If no `dottestcli_output-*.txt` file exists in that directory, `verify.ps1` ran in build-only mode (via `devenv`/`dotnet`/`msbuild` directly) and has already written `build_output.log` itself — do not overwrite it.
-
-Read the **last 20 lines** of `$env:OUTPUT_DIR\build_output.log` to confirm the build succeeded. If the build failed or the file is missing: this is a **FAILURE**.
-
-Only if the build succeeded, compare unit test results: check `UT_REPORT_XML` against the baseline report (`$env:DOTTEST_BASE_UNIT_TEST_REPORT`) and confirm no **new** unit test failures were introduced. If new unit test failures are present: this is a **FAILURE**.
+Before proceeding to Step 6, validate the unit-test report:
+- If `UT_REPORT_XML` identifies an existing report, inspect it using MCP tools. Compare it against `environment.DOTTEST_BASE_UNIT_TEST_REPORT`, when that baseline exists, and confirm no **new** unit test failures were introduced. Without a baseline, require no unit test failures. Test failures are a **FAILURE**: go directly to Step 8 failure handling; do not run Step 6. If the report shows no tests, print a warning and continue.
+- If no unit-test report was produced (the marker is absent or its path does not exist), a successful script exit is sufficient because `verify.ps1` always builds during post-fix verification. Print a warning that verification is build-only and continue. Do not claim unit tests passed or infer that no tests exist solely from the missing report. Do not search for or reuse a report from another invocation.
 
 ### Step 6: Verify — dotTEST Static Analysis
 
@@ -208,6 +204,7 @@ Interpret exit codes:
 ### Step 7: Validate Results
 
 Parse the `SA_REPORT_XML=` value from the last stdout line of `dottest-analyze.ps1` in Step 6. If no `SA_REPORT_XML=` line was emitted or the script exited non-zero: **FAILURE**.
+Unlike the optional unit-test report, the static-analysis report is always required.
 
 Additionally:
 - Use MCP tool `get_violations_from_report_file` on the generated report to confirm whether the representative violation and every ID in `equivalentViolationIds` have been resolved. Do not treat equivalent IDs that disappeared with the representative as separate fixes.

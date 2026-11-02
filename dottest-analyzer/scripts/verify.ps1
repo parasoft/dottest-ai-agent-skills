@@ -7,7 +7,7 @@
 # SCENARIO 1: No baseline files (DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE not set)
 #   - Runs unit tests with coverage using "builtin://Run VSTest Tests with coverage"
 #   - Saves results to parasoft-dottest-reports\baseline\unit-tests
-#   - Sets DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE env vars for subsequent steps
+#   - Sets baseline env vars only when both report.xml and coverage.xml exist
 #
 # SCENARIO 2: Baseline files provided (both DOTTEST_BASE_UNIT_TEST_REPORT and DOTTEST_BASE_UNIT_TEST_COVERAGE set)
 #   a) Initial verification (Step 2, DOTTEST_BASELINE_MODE is true): Only builds the solution
@@ -30,6 +30,10 @@
 # Exit codes:
 #   0  – Verification completed successfully
 #   1  – Build or tests failed
+#
+# Output markers:
+#   UT_REPORT_XML=<path>      – Emitted last on stdout only when report.xml exists
+# A successful exit confirms the build, unless explicitly skipped in initial build-only mode.
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -51,14 +55,12 @@ $disableTests = ($env:DISABLE_UNIT_TEST_VERIFICATION -and $env:DISABLE_UNIT_TEST
 $hasBaseline = ($env:DOTTEST_BASE_UNIT_TEST_REPORT -and $env:DOTTEST_BASE_UNIT_TEST_REPORT -ne "") -and ($env:DOTTEST_BASE_UNIT_TEST_COVERAGE -and $env:DOTTEST_BASE_UNIT_TEST_COVERAGE -ne "")
 $isBaselineMode = ($env:DOTTEST_BASELINE_MODE -eq "true")
 $disableInitialBuild = ($env:DISABLE_INITIAL_BUILD -and $env:DISABLE_INITIAL_BUILD -eq "true")
-$isFixVerification = -not $isBaselineMode
 
-$buildOnlyMode = $disableTests -or ($hasBaseline -and -not $isFixVerification)
+$buildOnlyMode = $disableTests -or ($hasBaseline -and $isBaselineMode)
 
 if ($buildOnlyMode) {
-    if ($disableInitialBuild) {
+    if ($disableInitialBuild -and $isBaselineMode) {
         Write-Output "[verify] DISABLE_INITIAL_BUILD is set to true. Skipping build verification."
-        Write-Output "BUILD_PERFORMED=false"
         exit 0
     }
 
@@ -68,6 +70,10 @@ if ($buildOnlyMode) {
     } else {
         # SCENARIO 2a: Baseline provided + initial verification - just build
         Write-Output "[verify] Baseline files provided. Verifying build only..."
+    }
+    $buildReportDir = Join-Path $env:OUTPUT_DIR "parasoft-dottest-reports\baseline\unit-tests"
+    if (-not (Test-Path -LiteralPath $buildReportDir -PathType Container)) {
+        New-Item -ItemType Directory -Path $buildReportDir -Force | Out-Null
     }
     $buildMethods = @(
         @{ Command = "devenv"; Args = @("$env:SOLUTION_PATH", "/build"); Display = "devenv `"$env:SOLUTION_PATH`" /build" },
@@ -96,7 +102,7 @@ if ($buildOnlyMode) {
 
         $attemptedBuild = $true
         Write-Output "[verify] Running: $($method.Display)"
-        & $method.Command @($method.Args) > "$env:OUTPUT_DIR\parasoft-dottest-reports\baseline\unit-tests\build_output.log"
+        & $method.Command @($method.Args) > "$buildReportDir\build_output.log"
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -eq 0) {
@@ -117,7 +123,6 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
     
-    Write-Output "BUILD_PERFORMED=true"
     Write-Output "[verify] Build completed successfully."
     exit 0
     
@@ -162,10 +167,6 @@ if ($buildOnlyMode) {
         Write-Output "[verify] Using builder: $builderValue"
     }
 
-    if ($isBaselineMode -and $disableInitialBuild) {
-        $argList += @("-nobuild")
-    }
-
     #if ($env:DOTTEST_REFERENCE_BRANCH -and $env:DOTTEST_REFERENCE_BRANCH -ne "") {
     #    $argList += @("-property", "scope.scontrol=true")
     #    $argList += @("-property", "scope.scontrol.files.filter.mode=branch")
@@ -192,25 +193,29 @@ if ($buildOnlyMode) {
         exit $exitCode
     }
 
+    $reportXml = Join-Path $reportDir "report.xml"
+    $coverageXml = Join-Path $reportDir "coverage.xml"
+    $hasReport = Test-Path -LiteralPath $reportXml -PathType Leaf
+    $hasCoverage = Test-Path -LiteralPath $coverageXml -PathType Leaf
+
     if (-not $hasBaseline) {
-        Write-Output "[verify] Baseline created."
-
-        # Set baseline paths for subsequent steps
-        $baselineReport = Join-Path $reportDir "report.xml"
-        $baselineCoverage = Join-Path $reportDir "coverage.xml"
-
-        $env:DOTTEST_BASE_UNIT_TEST_REPORT = $baselineReport
-        $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $baselineCoverage
-
-        Write-Output "DOTTEST_BASE_UNIT_TEST_REPORT=$baselineReport"
-        Write-Output "DOTTEST_BASE_UNIT_TEST_COVERAGE=$baselineCoverage"
+        if ($hasReport -and $hasCoverage) {
+            $env:DOTTEST_BASE_UNIT_TEST_REPORT = $reportXml
+            $env:DOTTEST_BASE_UNIT_TEST_COVERAGE = $coverageXml
+            Write-Output "[verify] Baseline created."
+            Write-Output "DOTTEST_BASE_UNIT_TEST_REPORT=$reportXml"
+            Write-Output "DOTTEST_BASE_UNIT_TEST_COVERAGE=$coverageXml"
+        } else {
+            Write-Warning "[verify] A complete unit-test baseline was not produced. No baseline paths will be set."
+        }
     }
 
-    # Running dotTEST for tests also performs the solution build.
-    Write-Output "BUILD_PERFORMED=true"
-    Write-Output "[verify] Tests completed successfully."
-        $reportXml = Join-Path $reportDir "report.xml"
+    Write-Output "[verify] dotTEST verification completed successfully."
+    if ($hasReport) {
         Write-Output "UT_REPORT_XML=$reportXml"
+    } else {
+        Write-Warning "[verify] No unit-test report was produced. Verification is build-only."
+    }
 
     exit 0
 }
